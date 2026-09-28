@@ -1,21 +1,32 @@
-## Problem or Challenge or Just Something Cool ?
-<!-- 
-Please describe what you are trying to do and why the current solution is insufficient.
-This helps developers understand the context and *why* for this feature, in addition to the *what*.
--->
+## Problem or Opportunity
 
-**Is your feature request related to an existing problem?**
-Ex. I'm always frustrated when [...]
+Describe what you are trying to do and why the current solution does not fully meet the need.
 
-## Proposed Solution
-<!-- 
-A clear and concise description of what you want to happen.
-Be as specific as possible about the desired behavior. 
--->
+> **Example:** Users currently cannot filter results by category, which makes it harder to find relevant information quickly.
+
+## Is this related to an existing problem?
+
+Explain whether this feature request is connected to a current limitation, bug, or workflow issue.
+
+> **Example:** Users may have to scroll through many unrelated results to find what they are looking for.
+
+## Optional: Proposed Solution
+
+Describe the feature you would like to add and how you expect it to work.
+
+> **Example:** Add a category filter that allows users to narrow results based on the type of information they want to see.
+
 ## Alternatives Considered
-<!--
-A clear and concise description of any alternative solutions or features you've considered.
--->
+
+Describe any other solutions or approaches you considered.
+
+> **Example:** Another option would be to add a search bar, but filtering by category may be faster for common use cases.
 
 ## Example Usage
-<!-- Optional: Show how you envision using this feature -->
+
+Show how you imagine someone using this feature.
+
+> **Example:**
+> 1. The user opens the results page
+> 2. The user selects a category from the filter
+> 3. The page updates to show only matching results

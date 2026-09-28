@@ -1,44 +1,34 @@
 ## Which issue does this PR close?
 
-<!--
-We generally require a GitHub issue to be filed for all bug fixes and enhancements and this helps us generate change logs for our releases.
-You can link an issue to this PR using the GitHub syntax. For example `Closes #123` indicates that this PR will close issue #123.
--->
+Link the issue related to this pull request.
 
-- Closes #.
+> **Example:** `Closes #12`
 
-## Rationale for this change
+Closes #[issue number]
 
-<!--
- Why are you proposing this change? If this is already explained clearly in the issue then this section is not needed.
- Explaining clearly why changes are proposed helps reviewers understand your changes and offer better suggestions for fixes.  
--->
+## Why is this change needed?
 
-## What changes are included in this PR?
+Briefly explain the reason for this change and what problem it is trying to solve.
 
-<!--
-There is no need to duplicate the description in the issue here but it is sometimes worth providing a summary of the individual changes in this PR.
--->
+> **Example:** This change fixes an issue where users could submit the form without entering a required field.
 
-## Are these changes tested?
+## What changes are included?
 
-<!--
-We typically require tests for all PRs in order to:
-1. Prevent the code from being accidentally broken by subsequent changes
-2. Serve as another way to document the expected behavior of the code
+Summarize the main changes made in this pull request.
 
-If tests are not included in your PR, please explain why (for example, are they covered by existing tests)?
--->
+> **Example:**
+> - Added validation for required fields
+> - Added an error message for invalid submissions
+> - Updated related tests
 
-## Are there any user-facing changes?
+## How was this tested?
 
-<!--
-If there are user-facing changes then we may require documentation to be updated before approving the PR.
--->
+Describe how you tested or verified that the changes work as expected.
 
-<!--
-If there are any breaking changes to public APIs, please add the `api change` label.
--->
+> **Example:** Ran the existing test suite and manually tested both valid and invalid form submissions.
 
 ## Additional Notes
-<!-- Any other context, screenshots, or information for reviewers -->
+
+Add any extra context, screenshots, known limitations, or other information that may help reviewers understand the changes.
+
+> **Example:** No known limitations. Screenshots are included if the change affects the interface.
