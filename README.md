@@ -1,4 +1,4 @@
-# OSPSD-Team-7
+# BASK'D
 Open Source and Professional Software Development Fall '26 Group Project
 
 ## Team Members
