@@ -10,7 +10,7 @@ Explain whether this feature request is connected to a current limitation, bug, 
 
 > **Example:** Users may have to scroll through many unrelated results to find what they are looking for.
 
-## Optional: Proposed Solution
+## Proposed Solution
 
 Describe the feature you would like to add and how you expect it to work.
 
