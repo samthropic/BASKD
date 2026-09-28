@@ -35,7 +35,7 @@ Add any screenshots or error messages that help explain the problem.
 > ValueError: location cannot be empty
 > ```
 
-## Possible Solution
+## Optional: Possible Solution
 
 If you have an idea of what may be causing the bug or how to fix it, describe it here.
 
