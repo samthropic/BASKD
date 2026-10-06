@@ -34,7 +34,7 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 | Operation | Owner | Reviewer |
 | --- | --- | --- |
 | `POST /events` (create) | _TBD_ | _TBD_ |
-| `GET /events/{id}` (read one) | _TBD_ | _TBD_ |
+| `GET /events/{id}` (read one) | Arda Dinc | _TBD_ |
 | `GET /events` (list a time window) | _TBD_ | _TBD_ |
 | `PUT /events/{id}` (replace) | _TBD_ | _TBD_ |
 | `DELETE /events/{id}` (delete) | _TBD_ | _TBD_ |
@@ -54,16 +54,22 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 
 | # | Completion criterion (spec §2.9) | Status | Evidence |
 | --- | --- | --- | --- |
-| 2.1 | The operations use the real provider (Google Calendar) | ✅ in code | `baskd/providers/google.py` |
+| 2.1 | The operations use the real provider (Google Calendar) | ✅ | `baskd/providers/google.py` |
 | 2.2 | The public contract still behaves as documented | ✅ | Same API tests; integration test compares fetched vs created |
 | 2.3 | Provider data is translated before it reaches the caller | ✅ | `google.py` maps Google resources to `Event`; no SDK types leave the module |
 | 2.4 | Credentials are kept outside the repository | ✅ | `secrets/` and `.env` git-ignored; `.env.example` only |
 | 2.5 | Another teammate can follow the docs and run the integration | ⬜ | `docs/HUMAN_STEPS.md`; needs a second member to do it |
-| 2.6 | Verified end to end with a real test account (at least two members) | ⬜ | `uv run pytest -m integration -ra` and `make demo` output on the M1 PR |
-| 2.7 | At least one integration test or documented manual verification against the real provider | ✅ in code, ⬜ run | `tests/integration/test_google_calendar.py` (skips without credentials) |
+| 2.6 | Verified end to end with a real test account (at least two members) | 🟡 1 of 2 (Arda, Oct 6) | `uv run pytest -m integration -ra` and `make demo` output on the M1 PR |
+| 2.7 | At least one integration test or documented manual verification against the real provider | ✅ | `tests/integration/test_google_calendar.py` (skips without credentials) |
 
-**Blocking for Oct 7:** 2.5 and 2.6. They need the Google Cloud service account and the shared
-test calendar from `docs/HUMAN_STEPS.md` §1 to §3.
+**Blocking for Oct 7:** 2.5 and 2.6 need a second member to run the integration from the docs.
+Arda shares `secrets/service-account.json` and the calendar ID privately (not in git or chat).
+
+### Real-provider verification log
+
+| Date | Who | Commit | `pytest -m integration` | `make demo` |
+| --- | --- | --- | --- | --- |
+| 2026-10-06 | Arda Dinc | `f5592e4` | 4 passed | All steps behaved as documented (provider=google) |
 
 ## 2. Assumptions and decisions (each one is a choice the handout left open)
 

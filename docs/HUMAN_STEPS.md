@@ -11,8 +11,8 @@ Estimated time: 20-30 minutes for §1-§4 if nothing is blocked by an organisati
 
 | Role | Person | Why it matters |
 | --- | --- | --- |
-| Google Cloud project owner | _TBD_ | Can create/delete the service account and its keys; should be a **personal** Google account (see §1 caveat) |
-| Test-calendar owner | _TBD_ (same person is simplest) | The calendar lives in their Google account; they can revoke the robot's access at any time |
+| Google Cloud project owner | Arda Dinc (project `baskd-calendar`) | Can create/delete the service account and its keys; should be a **personal** Google account (see §1 caveat) |
+| Test-calendar owner | Arda Dinc ("BASK'D test calendar") | The calendar lives in their Google account; they can revoke the robot's access at any time |
 | Key custodians | all developers | Each has the key file locally under `secrets/`; nobody has it in git, chat, or email |
 | GitHub repository admin | _TBD_ | Sets repository secrets (§4) and branch protection (§5) |
 | Staff contact for access/cost problems | course staff via `#help` | Raise early, as the handout asks |
@@ -126,9 +126,9 @@ and consider disabling merge commits.
 
 ## 7. Access checklist (tick before assigning implementation work)
 
-- [ ] Cloud project exists; Calendar API enabled
+- [x] Cloud project exists; Calendar API enabled
 - [ ] Service account created; key stored in `secrets/` by every developer; in the password manager
-- [ ] Test calendar created and shared with the robot ("Make changes to events")
+- [x] Test calendar created and shared with the robot ("Make changes to events")
 - [ ] Every developer has run `uv run pytest -m integration` successfully
 - [ ] GitHub secrets set; manual CI run shows the integration job green
 - [ ] Branch protection on `main` enabled
