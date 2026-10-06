@@ -6,9 +6,8 @@ size and reviewer (AGENTS.md §1) before anyone starts on it; this file is the s
 
 ## P0: before Milestone 1 is declared done (Oct 7)
 
-1. **Ask staff where the Level definitions live** (`docs/REQUIREMENTS.md` §4, question 1) and
-   post the other open questions on `#help`. Copy every answer into REQUIREMENTS.md, re-tick
-   §1, and open an issue per gap. Until then our stated assumption is the spec we build to.
+1. **Assign operation owners** (`docs/REQUIREMENTS.md` §1): one operation per member, as the
+   spec requires. Post remaining open questions (REQUIREMENTS §4) on `#help`.
 2. **Run the slice against the real calendar** (docs/HUMAN_STEPS.md §1-§3) and attach the
    output of `uv run pytest -m integration -ra` and `make demo` to the milestone issue. Until
    this happens, the Google provider is verified only by offline tests with fake SDK responses.

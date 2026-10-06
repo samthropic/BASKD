@@ -7,58 +7,63 @@ and how we know each requirement is met.
 
 Status legend: ✅ implemented and tested · 🟡 implemented, needs confirmation · ⬜ not started
 
-## 0. What the team has actually been given
+## 0. Source of the requirements
 
-The complete definition of Milestone 1 available to us is:
+The Level definitions are in the **Specs** section of the HW1 handout ("OSPSD Fall '26 - HW1",
+linked from the Oct 1 Brightspace announcement). The Oct 3 announcement confirms the scope:
 
-> **First working version** (due October 7, 2026)
-> - A polished GitHub repository where you talk to your selected vertical's provider and
->   tests to verify.
-> - This includes Level 1 and Level 2 of Specs.
-
-plus the general handout sections (learning goals, §1.1 scope, §2 teamwork). **No document
-available to the team defines what "Level 1" and "Level 2" contain.** Rather than wait, we
-wrote down in §1 what a reasonable Level 1/2 for the calendar vertical must mean, built it,
-and asked staff to confirm (§4, question 1). If the Levels turn out to include something
-else, the gap becomes an issue and the table below is corrected; nothing is silently dropped.
-
-Acceptance criteria that follow directly from the three phrases of the milestone text:
-
-| Phrase | What we take it to mean | Where it is met |
+| Milestone | Due | Levels |
 | --- | --- | --- |
-| "polished GitHub repository" | A newcomer can clone, install, run and test from the README alone; CI is green; issues/PRs follow templates; workflow and decisions are written down; no secrets or junk committed | README quick start, `uv.lock`, `.github/` (templates, CI, release draft), `AGENTS.md`, `docs/`, `.gitignore`/`.dockerignore` |
-| "talk to your selected vertical's provider" | The service performs real create/read/list/update/delete operations against a real Google Calendar through the official API, not a stub | `baskd/providers/google.py`; `make demo` against Google; `tests/integration/` |
-| "tests to verify" | Automated tests for expected behaviour and edge cases at every layer, plus tests that exercise the real provider and clean up after themselves | `tests/unit/` (130 tests), `tests/integration/` (4 tests, self-skipping without credentials), CI |
+| First working version | Oct 7, 2026 | Level 1 (one operation, documented and tested) and Level 2 (same operation against the real provider) |
+| Review release | Oct 14, 2026 | Level 3 (provider-independent interface) and Level 4 (inject the provider implementation) |
+| Final release | Oct 21, 2026 | Level 5 (consistent failure handling) plus review feedback |
 
-## 1. What we believe Levels 1 and 2 ask for (assumption, see §0)
+Earlier drafts of this file guessed at the Levels before the spec was available. The tables
+below are the real Level 1 and Level 2 completion criteria. Some of our code (the `ports.py`
+interface, the in-memory provider, dependency injection, the error envelope) goes beyond
+Levels 1 and 2; it is ahead of schedule for Levels 3 to 5 and will be revisited against those
+levels' text rather than assumed complete.
 
-### Level 1: a thin slice through the whole system (first working version)
+## 1. Levels 1 and 2: completion criteria
 
-| # | Requirement | Status | Evidence |
+### Operation ownership
+
+The spec requires each member to own one distinct public operation through all five levels,
+including its tests and documentation. _Proposed; confirm in the PR review:_
+
+| Operation | Owner | Reviewer |
+| --- | --- | --- |
+| `POST /events` (create) | _TBD_ | _TBD_ |
+| `GET /events/{id}` (read one) | _TBD_ | _TBD_ |
+| `GET /events` (list a time window) | _TBD_ | _TBD_ |
+| `PUT /events/{id}` (replace) | _TBD_ | _TBD_ |
+| `DELETE /events/{id}` (delete) | _TBD_ | _TBD_ |
+
+### Level 1: implement one operation
+
+| # | Completion criterion (spec §1.8) | Status | Evidence |
 | --- | --- | --- | --- |
-| 1.1 | A FastAPI service that runs locally from a documented, reproducible setup | ✅ | README quick start; `uv.lock`; CI `checks` job |
-| 1.2 | Real provider integration: create an event through our API and see it in the provider's calendar | ✅ against Google by `tests/integration`; 🟡 until the team runs it with real credentials | `tests/integration/test_google_calendar.py::test_create_get_list_replace_delete`; `scripts/demo.py` |
-| 1.3 | Retrieve the event through our API and compare it with what was created | ✅ | same test (`fetched.json() == event`) |
-| 1.4 | Public behaviour independent of the provider: the same API works on a fake | ✅ | `baskd/ports.py`; identical API tests pass on `InMemoryCalendarProvider` |
-| 1.5 | Dependency injection of the concrete provider | ✅ | `create_app(settings, provider)`; `api/dependencies.py` |
-| 1.6 | Test doubles for repeatable testing | ✅ | `providers/memory.py`, `tests/conftest.py::FailingProvider` |
-| 1.7 | Health/liveness endpoint | ✅ | `GET /health` |
+| 1.1 | The service exposes documented public operations (method, route, parameters, success response and status, meaning) | ✅ | README "The API" table; OpenAPI at `/docs` |
+| 1.2 | A caller can invoke them and receive the expected response | ✅ | `make run-memory` + `make demo` |
+| 1.3 | Each operation's success behaviour is covered by at least one test of public behaviour | ✅ | `tests/unit/test_api_events.py` |
+| 1.4 | Documentation matches the implementation | ✅ | README table and tests agree; reviewed in the M1 PR |
+| 1.5 | The team can explain what each operation guarantees | 🟡 | Each owner reviews their row of the README table |
+| 1.6 | A teammate other than the author reviewed route, request, response, naming, tests and docs | 🟡 | M1 pull request review |
 
-### Level 2: expand behaviour, handle real integration problems
+### Level 2: connect to a real provider
 
-| # | Requirement | Status | Evidence |
+| # | Completion criterion (spec §2.9) | Status | Evidence |
 | --- | --- | --- | --- |
-| 2.1 | **Invalid input** rejected with clear, consistent errors | ✅ | 422 envelope with `details`; `tests/unit/test_api_events.py::TestCreate::test_invalid_input_is_422_with_details` |
-| 2.2 | **Collections of results**: list events in a time window, ordered, paginated | ✅ | `GET /events?from&to&limit&cursor`; overlap semantics tests in `test_memory_provider.py::TestList`; real pagination in `tests/integration::test_pagination_cursor_round_trip` |
-| 2.3 | Update an event | ✅ | `PUT /events/{id}` (full replacement) |
-| 2.4 | Delete an event; subsequent reads 404 | ✅ | `TestDelete` unit + integration |
-| 2.5 | **Provider failures** surfaced honestly (timeouts, auth, quota, 5xx) rather than as 500s | ✅ | `providers/google.py::translate_http_error`; `tests/unit/test_api_errors.py` |
-| 2.6 | Provider limitations identified early and reflected in the API | ✅ | README "Provider limitations"; §3 below |
-| 2.7 | **Repeated requests** (idempotent create / retries) | ⬜ assumed Level 3 | `docs/NEXT_STEPS.md` |
-| 2.8 | Recurring or all-day event creation, attendees, multiple calendars | ⬜ assumed out of scope for M1 | `docs/NEXT_STEPS.md` |
+| 2.1 | The operations use the real provider (Google Calendar) | ✅ in code | `baskd/providers/google.py` |
+| 2.2 | The public contract still behaves as documented | ✅ | Same API tests; integration test compares fetched vs created |
+| 2.3 | Provider data is translated before it reaches the caller | ✅ | `google.py` maps Google resources to `Event`; no SDK types leave the module |
+| 2.4 | Credentials are kept outside the repository | ✅ | `secrets/` and `.env` git-ignored; `.env.example` only |
+| 2.5 | Another teammate can follow the docs and run the integration | ⬜ | `docs/HUMAN_STEPS.md`; needs a second member to do it |
+| 2.6 | Verified end to end with a real test account (at least two members) | ⬜ | `uv run pytest -m integration -ra` and `make demo` output on the M1 PR |
+| 2.7 | At least one integration test or documented manual verification against the real provider | ✅ in code, ⬜ run | `tests/integration/test_google_calendar.py` (skips without credentials) |
 
-If the real Level 2 text includes 2.7 or 2.8, they move up; the design already has a home
-for each (see NEXT_STEPS).
+**Blocking for Oct 7:** 2.5 and 2.6. They need the Google Cloud service account and the shared
+test calendar from `docs/HUMAN_STEPS.md` §1 to §3.
 
 ## 2. Assumptions and decisions (each one is a choice the handout left open)
 
@@ -94,12 +99,7 @@ for each (see NEXT_STEPS).
 
 ## 4. Open questions for staff (post in `#help`)
 
-1. The Milestone 1 description says it "includes Level 1 and Level 2 of Specs", but no
-   material we have defines the Levels. Where are they published, or can you share them? Our
-   working assumption for the calendar vertical is: Level 1 = create and read an event through
-   our API against the real provider; Level 2 = list (collections, time window, pagination),
-   update, delete, input validation and honest provider-error handling. Is idempotency
-   ("repeated requests") Level 2 or later?
+1. ~~Where are the Levels defined?~~ Answered: the Specs section of the HW1 handout.
 2. Is a service account (robot identity, no end-user OAuth) an acceptable "real provider
    integration", given it cannot invite attendees?
 3. Is one configured calendar per deployment acceptable, or must the API address multiple
