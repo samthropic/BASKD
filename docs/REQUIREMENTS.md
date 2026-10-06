@@ -36,7 +36,7 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 | `POST /events` (create) | _TBD_ | _TBD_ |
 | `GET /events/{id}` (read one) | Arda Dinc | _TBD_ |
 | `GET /events` (list a time window) | _TBD_ | _TBD_ |
-| `PUT /events/{id}` (replace) | _TBD_ | _TBD_ |
+| `PUT /events/{id}` (replace) | Karthik Ganeshan | _TBD_ |
 | `DELETE /events/{id}` (delete) | _TBD_ | _TBD_ |
 
 ### Level 1: implement one operation
