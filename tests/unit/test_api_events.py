@@ -35,7 +35,22 @@ class TestCreate:
         assert body["start"] == "2026-10-07T15:00:00Z"
         assert body["end"] == "2026-10-07T15:30:00Z"
         assert body["title"] == "Sprint planning"
+        assert body["description"] == "Bring the backlog"
+        assert body["location"] == "Room 101"
         assert body["all_day"] is False
+
+    def test_omitted_optional_fields_are_null(self, client: TestClient) -> None:
+        payload = event_payload()
+        payload.pop("description")
+        payload.pop("location")
+
+        response = client.post("/events", json=payload)
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["description"] is None
+        assert body["location"] is None
+        assert body["web_link"] is None
 
     def test_created_event_is_retrievable(self, client: TestClient) -> None:
         created = create(client)
@@ -43,15 +58,27 @@ class TestCreate:
         assert fetched.status_code == 200
         assert fetched.json() == created
 
+    def test_repeating_request_creates_distinct_events(self, client: TestClient) -> None:
+        payload = event_payload()
+
+        first = client.post("/events", json=payload)
+        second = client.post("/events", json=payload)
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert first.json()["id"] != second.json()["id"]
+
     @pytest.mark.parametrize(
         ("overrides", "field"),
         [
             ({"title": ""}, "title"),
+            ({"title": "   "}, "title"),
             ({"start": "2026-10-07T15:00:00"}, "start"),  # naive
             ({"end": "2026-10-07T15:00:00Z"}, None),  # end == start -> model-level error
             ({"end": "yesterday"}, "end"),
             ({"attendees": ["a@example.com"]}, "attendees"),
             ({"description": "x" * 8193}, "description"),
+            ({"location": "x" * 1025}, "location"),
         ],
     )
     def test_invalid_input_is_422_with_details(
@@ -196,6 +223,9 @@ def test_openapi_documents_error_envelope(client: TestClient) -> None:
     create_op = schema["paths"]["/events"]["post"]
     assert "422" in create_op["responses"]
     assert "503" in create_op["responses"]
+    assert "Repeating the request creates another event." in create_op["description"]
+    location_header = create_op["responses"]["201"]["headers"]["Location"]
+    assert location_header["schema"] == {"type": "string", "format": "uri"}
     assert "ErrorResponse" in schema["components"]["schemas"]
     list_params = {p["name"] for p in schema["paths"]["/events"]["get"]["parameters"]}
     assert {"from", "to", "limit", "cursor"} <= list_params
