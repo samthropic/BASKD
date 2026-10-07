@@ -12,7 +12,7 @@ Members: Sam Fiallos, Arda Dinc, Bryant Luna-Ramos, Karthik Ganeshan, Daniel Zha
 | --- | --- | --- | --- |
 | Sam | _TBD_ | _TBD_ | _TBD_ |
 | Arda | _TBD_ | _TBD_ | _TBD_ |
-| Bryant | _TBD_ | _TBD_ | _TBD_ |
+| Bryant | ~5 | Weeknights 21:00-24:00 ET | Weekdays 13:00-19:00 ET |
 | Karthik | ~5 | Thursdays 9:00-17:00 ET; async on GitHub other days | None known |
 | Daniel | _TBD_ | _TBD_ | _TBD_ |
 
