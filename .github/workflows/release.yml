@@ -1,0 +1,34 @@
+# Turns a pushed `v*` tag into a *draft* GitHub Release with auto-generated notes.
+#
+# The release coordinator (AGENTS.md, "Releases") then reviews and edits the notes, adds the
+# links to CI evidence and the fresh-checkout verification, and publishes. Tags containing a
+# hyphen (v0.1.0-rc.1) are marked as prereleases automatically.
+name: Release draft
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create draft release from tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          args=(--draft --generate-notes --verify-tag --title "$TAG")
+          case "$TAG" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" "${args[@]}" --repo "$GITHUB_REPOSITORY"
+          echo "::notice::Draft release $TAG created. Review the notes, then publish it."
