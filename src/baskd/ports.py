@@ -48,7 +48,11 @@ class CalendarProvider(Protocol):
         ...
 
     def replace_event(self, event_id: str, data: EventInput) -> Event:
-        """Replace every client-editable field of an existing event and return the result."""
+        """Replace every client-editable field of an existing event and return the result.
+
+        Raises :class:`~baskd.errors.InvalidRequest` for an all-day event or a recurring
+        series, which :class:`~baskd.models.EventInput` cannot represent, without changing it.
+        """
         ...
 
     def delete_event(self, event_id: str) -> None:

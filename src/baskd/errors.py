@@ -37,6 +37,13 @@ class InvalidRequest(CalendarError):
     code = "invalid_request"
 
 
+#: ``InvalidRequest`` messages for events ``PUT`` refuses; shared so every provider agrees.
+ALL_DAY_NOT_REPLACEABLE = "All-day events cannot be replaced through this API"
+SERIES_NOT_REPLACEABLE = (
+    "Recurring event series cannot be replaced; replace a single occurrence instead"
+)
+
+
 class ProviderUnavailable(CalendarError):
     """The provider is temporarily unavailable (timeout, network error, rate limit, 5xx)."""
 
