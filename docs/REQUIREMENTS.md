@@ -33,7 +33,7 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 
 | Operation | Owner | Reviewer |
 | --- | --- | --- |
-| `POST /events` (create) | _TBD_ | _TBD_ |
+| `POST /events` (create) | Sam Fiallos | _TBD_ |
 | `GET /events/{id}` (read one) | Arda Dinc | _TBD_ |
 | `GET /events` (list a time window) | _TBD_ | _TBD_ |
 | `PUT /events/{id}` (replace) | Karthik Ganeshan | _TBD_ |
@@ -58,18 +58,18 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 | 2.2 | The public contract still behaves as documented | ✅ | Same API tests; integration test compares fetched vs created |
 | 2.3 | Provider data is translated before it reaches the caller | ✅ | `google.py` maps Google resources to `Event`; no SDK types leave the module |
 | 2.4 | Credentials are kept outside the repository | ✅ | `secrets/` and `.env` git-ignored; `.env.example` only |
-| 2.5 | Another teammate can follow the docs and run the integration | ⬜ | `docs/HUMAN_STEPS.md`; needs a second member to do it |
-| 2.6 | Verified end to end with a real test account (at least two members) | 🟡 1 of 2 (Arda, Oct 6) | `uv run pytest -m integration -ra` and `make demo` output on the M1 PR |
+| 2.5 | Another teammate can follow the docs and run the integration | ✅ | `docs/HUMAN_STEPS.md`; needs a second member to do it |
+| 2.6 | Verified end to end with a real test account (at least two members) | ✅ 2 of 2 (Arda, Sam) | `uv run pytest -m integration -ra` and `make demo` output on the M1 PR |
 | 2.7 | At least one integration test or documented manual verification against the real provider | ✅ | `tests/integration/test_google_calendar.py` (skips without credentials) |
 
-**Blocking for Oct 7:** 2.5 and 2.6 need a second member to run the integration from the docs.
-Arda shares `secrets/service-account.json` and the calendar ID privately (not in git or chat).
+**Completed for Oct 7:** Sam independently followed the integration setup and successfully ran the real-provider tests and demo on Oct 7, satisfying 2.5 and 2.6.
 
 ### Real-provider verification log
 
 | Date | Who | Commit | `pytest -m integration` | `make demo` |
 | --- | --- | --- | --- | --- |
 | 2026-10-06 | Arda Dinc | `f5592e4` | 4 passed | All steps behaved as documented (provider=google) |
+| 2026-10-07 | Sam Fiallos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
 
 ## 2. Assumptions and decisions (each one is a choice the handout left open)
 
