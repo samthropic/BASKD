@@ -96,13 +96,25 @@ An event looks like:
 
 To create or replace one, send `title`, `start`, `end` and optionally `description`, `location`.
 
+`POST /events` creates one timed event on the configured calendar. The provider assigns its
+opaque `id`; the response uses UTC timestamps and includes a `Location` header for
+`GET /events/{id}`. The operation is **not idempotent**: repeating the same request creates
+another event. The read-only `all_day` field is always `false` for events created through this
+operation, and `web_link` may be `null` when the active provider does not offer a UI link.
+
+```bash
+curl -i http://127.0.0.1:8000/events \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Sprint planning","start":"2026-10-07T15:00:00Z","end":"2026-10-07T15:30:00Z"}'
+```
+
 Rules every client can rely on (each is enforced by a test):
 
 - **Timestamps in must carry an offset** (`…Z` or `…-04:00`); naive timestamps are rejected
   with `422`, not guessed. **Timestamps out are UTC.** Sub-second precision is dropped.
 - `end` must be strictly after `start`. `title` must be non-blank (≤ 1024 chars);
-  `description` ≤ 8192 chars. Unknown fields in the body or query string are rejected (`422`),
-  so a typo like `?form=` cannot silently return the wrong data.
+  `description` ≤ 8192 chars and `location` ≤ 1024 chars. Unknown fields in the body or query
+  string are rejected (`422`), so a typo like `?form=` cannot silently return the wrong data.
 - Listing uses **overlap semantics** on the half-open window `[from, to)`: an event is
   included when `event.end > from` and `event.start < to`. Either bound may be omitted.
   `limit` is 1-250 (default 50); `cursor` is opaque and only valid with the same `from`/`to`.

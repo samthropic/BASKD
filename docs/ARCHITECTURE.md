@@ -101,11 +101,15 @@ sequenceDiagram
         else provider failed
             G-->>P: HttpError / RefreshError / timeout
             P->>P: translate_http_error() → CalendarError subclass
-            P-->>E: raise ProviderUnavailable | ProviderAuthError | InvalidRequest | EventNotFound
-            E-->>C: 503 (+Retry-After) | 502 | 400 | 404 with {error: {code, message}}
+            P-->>E: raise ProviderUnavailable | ProviderAuthError | InvalidRequest
+            E-->>C: 503 (+Retry-After) | 502 | 400 with {error: {code, message}}
         end
     end
 ```
+
+For create, a Google `404` means that the configured calendar does not exist or was not
+shared with the service account, so it becomes `502 provider_auth_error`. `404
+event_not_found` only applies to operations that address an existing event id.
 
 In words:
 

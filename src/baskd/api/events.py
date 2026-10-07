@@ -34,11 +34,28 @@ PROVIDER_FAILURES = (
     status_code=status.HTTP_201_CREATED,
     response_model=Event,
     summary="Create an event",
-    responses=documented_errors(
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
-        *PROVIDER_FAILURES,
+    description=(
+        "Create one timed event on the calendar configured for this service. The provider "
+        "assigns the event id; response timestamps are UTC, and the `Location` header points "
+        "to the new event's `GET /events/{id}` resource. Repeating the request creates "
+        "another event."
     ),
+    responses={
+        status.HTTP_201_CREATED: {
+            "description": "Event created.",
+            "headers": {
+                "Location": {
+                    "description": "URL of the newly created event resource.",
+                    "schema": {"type": "string", "format": "uri"},
+                }
+            },
+        },
+        **documented_errors(
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            *PROVIDER_FAILURES,
+        ),
+    },
 )
 def create_event(
     data: EventInput, provider: Provider, request: Request, response: Response
