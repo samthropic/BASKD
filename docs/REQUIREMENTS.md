@@ -33,11 +33,11 @@ including its tests and documentation. _Proposed; confirm in the PR review:_
 
 | Operation | Owner | Reviewer |
 | --- | --- | --- |
-| `POST /events` (create) | _TBD_ | _TBD_ |
-| `GET /events/{id}` (read one) | Arda Dinc | _TBD_ |
-| `GET /events` (list a time window) | Bryant Luna-Ramos | _TBD_ |
-| `PUT /events/{id}` (replace) | Karthik Ganeshan | _TBD_ |
-| `DELETE /events/{id}` (delete) | _TBD_ | _TBD_ |
+| `POST /events` (create) | Sam Fiallos | Daniel Zhang |
+| `GET /events/{id}` (read one) | Arda Dinc | Sam Fiallos |
+| `GET /events` (list a time window) | Bryant Luna-Ramos | Arda Dinc |
+| `PUT /events/{id}` (replace) | Karthik Ganeshan | Bryant Luna-Ramos |
+| `DELETE /events/{id}` (delete) | Daniel Zhang | Karthik Ganeshan |
 
 ### Level 1: implement one operation
 
@@ -70,6 +70,7 @@ Arda shares `secrets/service-account.json` and the calendar ID privately (not in
 | --- | --- | --- | --- | --- |
 | 2026-10-06 | Arda Dinc | `f5592e4` | 4 passed | All steps behaved as documented (provider=google) |
 | 2026-10-07 | Bryant Luna-Ramos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
+| 2026-10-07 | Sam Fiallos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
 
 ## 2. Assumptions and decisions (each one is a choice the handout left open)
 
