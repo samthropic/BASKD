@@ -95,7 +95,9 @@ def get_event(event_id: EventId, provider: Provider) -> Event:
     summary="Replace an event",
     description=(
         "Full replacement: every client-editable field is taken from the body. Omitted "
-        "optional fields (`description`, `location`) are cleared."
+        "optional fields (`description`, `location`) are cleared. The `id` never changes. "
+        "All-day events and recurring series cannot be replaced (`400 invalid_request`); "
+        "a single occurrence of a recurring event can."
     ),
     responses=documented_errors(
         status.HTTP_400_BAD_REQUEST,

@@ -27,6 +27,12 @@ Release notes on GitHub are built from the matching section here.
   (assumptions, acceptance criteria, open questions), ARCHITECTURE, HUMAN_STEPS,
   DEPLOYMENT, NEXT_STEPS, TEAM_AGREEMENT (draft).
 
+### Changed
+- `PUT /events/{id}` on an all-day event or a recurring series now returns
+  `400 invalid_request` and leaves the event unchanged. Previously Google silently turned an
+  all-day event into a timed one, and a series failed with Google's own "Missing time zone
+  definition" error. Single occurrences of a recurring event can still be replaced.
+
 ### Known limitations
 - No caller authentication: run on `127.0.0.1` only.
 - Attendees, creating all-day or recurring events, multiple calendars, `PATCH`, idempotent

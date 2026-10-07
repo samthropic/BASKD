@@ -12,7 +12,8 @@ Provider facts that shape this module (each is reflected in the public API or do
   rather than a 404, and ``events.delete`` on an already-deleted event returns 410 Gone.
   Both are reported as :class:`~baskd.errors.EventNotFound`.
 * All-day events carry a ``date`` instead of a ``dateTime``; they are reported with
-  ``all_day=true`` and midnight-UTC bounds but cannot be created through this API.
+  ``all_day=true`` and midnight-UTC bounds but cannot be created or replaced through this
+  API. Neither can a recurring *series*; single occurrences can be replaced.
 * A service account cannot invite attendees without domain-wide delegation, so the API
   does not expose attendees at all.
 * ``googleapiclient``'s HTTP transport is not thread-safe, so every call gets its own
@@ -36,6 +37,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from baskd.errors import (
+    ALL_DAY_NOT_REPLACEABLE,
+    SERIES_NOT_REPLACEABLE,
     CalendarError,
     EventNotFound,
     InvalidRequest,
@@ -150,6 +153,7 @@ class GoogleCalendarProvider:
         # Fetch-modify-update is Google's documented way to edit an event: sending the
         # whole resource back preserves fields this API does not manage (reminders, ...).
         current = self._fetch_live(event_id)
+        ensure_replaceable(current)
         request = self._events().update(
             calendarId=self._calendar_id, eventId=event_id, body=merge_into_resource(current, data)
         )
@@ -247,6 +251,22 @@ def to_google_body(data: EventInput) -> dict[str, Any]:
     if data.location is not None:
         body["location"] = data.location
     return body
+
+
+def ensure_replaceable(resource: Mapping[str, Any]) -> None:
+    """Refuse a replacement this API cannot express faithfully, before calling ``update``.
+
+    * All-day events: :class:`EventInput` only carries instants, so Google would silently
+      turn the event into a timed one.
+    * Recurring series: Google requires a ``timeZone`` on the bounds of a series, which
+      :class:`EventInput` does not carry, so Google would reject the update with a
+      confusing "Missing time zone definition". A single occurrence (the ids that
+      ``list_events`` returns) is an ordinary event and can be replaced.
+    """
+    if "date" in (resource.get("start") or {}):
+        raise InvalidRequest(ALL_DAY_NOT_REPLACEABLE)
+    if resource.get("recurrence"):
+        raise InvalidRequest(SERIES_NOT_REPLACEABLE)
 
 
 def merge_into_resource(resource: Mapping[str, Any], data: EventInput) -> dict[str, Any]:

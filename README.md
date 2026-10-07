@@ -118,7 +118,9 @@ Rules every client can rely on (each is enforced by a test):
 - Listing uses **overlap semantics** on the half-open window `[from, to)`: an event is
   included when `event.end > from` and `event.start < to`. Either bound may be omitted.
   `limit` is 1-250 (default 50); `cursor` is opaque and only valid with the same `from`/`to`.
-- `PUT` is a full replacement: optional fields you omit are cleared.
+- `PUT` is a full replacement: optional fields you omit (or send as `null` or `""`) are
+  cleared, and the `id` never changes. The body is validated before the event is looked up,
+  so an invalid body is `422` even for an unknown id.
 - Every error has one shape:
   `{"error": {"code": "<stable_code>", "message": "<human readable>", "details": [...]}}`
   with `details` only on `validation_error`. Codes: `validation_error` (422),
@@ -132,9 +134,12 @@ Discovered up front and encoded rather than papered over (details in `docs/REQUI
 
 - **No attendees.** A Google service account cannot invite attendees without domain-wide
   delegation, so the API has no attendee field at all instead of one that silently fails.
-- **All-day and recurring events can be read, not written.** Existing all-day events show up
+- **All-day and recurring events can be read, not created.** Existing all-day events show up
   with `all_day: true` and midnight-UTC bounds; recurring events are listed as individual
-  instances. Creating either is a documented next step.
+  occurrences. `PUT` refuses an all-day event or a whole recurring series with
+  `400 invalid_request` and leaves it unchanged (otherwise Google would silently turn an
+  all-day event into a timed one); a single occurrence, as returned by `GET /events`, can be
+  replaced and only that occurrence changes. Creating either is a documented next step.
 - **Deleting is not idempotent at the provider**: Google answers 410 for a second delete and
   may return a "cancelled" event on `GET`. Both are reported as `404 event_not_found`.
 - **Google answers 404 both for "no such event" and "no such calendar / not shared".** Only

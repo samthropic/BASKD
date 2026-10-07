@@ -11,7 +11,7 @@ calendar do not interfere.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -120,6 +120,68 @@ def test_create_get_list_replace_delete(client: TestClient, cleanup: list[str]) 
     assert client.delete(f"/events/{event['id']}").status_code == 204
     assert client.get(f"/events/{event['id']}").status_code == 404
     assert client.delete(f"/events/{event['id']}").status_code == 404
+
+
+def test_replace_refuses_all_day_and_series_but_moves_one_occurrence(
+    client: TestClient, cleanup: list[str]
+) -> None:
+    # The API cannot create all-day or recurring events, so seed them through the SDK.
+    provider = client.app.state.provider  # type: ignore[attr-defined]
+    marker = uuid4().hex
+    day = (datetime.now(UTC) + timedelta(days=50)).date()
+    start = datetime.combine(day, time(15), tzinfo=UTC)
+
+    def insert(body: dict[str, Any]) -> dict[str, Any]:
+        resource: dict[str, Any] = provider._execute(
+            provider._events().insert(calendarId=provider._calendar_id, body=body)
+        )
+        cleanup.append(resource["id"])
+        return resource
+
+    all_day = insert(
+        {
+            "summary": f"baskd-integration {marker} all-day",
+            "start": {"date": day.isoformat()},
+            "end": {"date": (day + timedelta(days=1)).isoformat()},
+        }
+    )
+    series = insert(
+        {
+            "summary": f"baskd-integration {marker} series",
+            "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
+            "end": {"dateTime": (start + timedelta(minutes=30)).isoformat(), "timeZone": "UTC"},
+            "recurrence": ["RRULE:FREQ=DAILY;COUNT=3"],
+        }
+    )
+    new_start = start + timedelta(hours=2)
+    body = {
+        "title": f"baskd-integration {marker} moved",
+        "start": new_start.isoformat(),
+        "end": (new_start + timedelta(minutes=30)).isoformat(),
+    }
+
+    refused = client.put(f"/events/{all_day['id']}", json=body)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "invalid_request"
+    assert client.get(f"/events/{all_day['id']}").json()["all_day"] is True
+
+    refused = client.put(f"/events/{series['id']}", json=body)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "invalid_request"
+
+    window = {"from": start.isoformat(), "to": (start + timedelta(days=3)).isoformat()}
+    occurrences = [
+        item
+        for item in client.get("/events", params=window).json()["items"]
+        if item["title"].endswith(f"{marker} series")
+    ]
+    assert len(occurrences) == 3
+    moved = client.put(f"/events/{occurrences[0]['id']}", json=body)
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["id"] == occurrences[0]["id"]
+    assert datetime.fromisoformat(moved.json()["start"]) == new_start
+    untouched = client.get(f"/events/{occurrences[1]['id']}").json()
+    assert untouched["title"].endswith(f"{marker} series")
 
 
 def test_unknown_event_is_404(client: TestClient) -> None:

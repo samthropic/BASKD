@@ -375,6 +375,54 @@ class TestProviderCalls:
             provider.replace_event("abc123def456", event_input())
         assert [method for method, _ in events.calls] == ["get"]
 
+    def test_replace_404_on_update_is_not_found(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        # Deleted between our fetch and our update.
+        events.enqueue("get", GOOGLE_EVENT)
+        events.enqueue("update", http_error(404))
+        with pytest.raises(EventNotFound):
+            provider.replace_event("abc123def456", event_input())
+
+    @pytest.mark.parametrize(
+        ("resource", "message"),
+        [
+            (
+                {**GOOGLE_EVENT, "start": {"date": "2026-11-26"}, "end": {"date": "2026-11-27"}},
+                "All-day",
+            ),
+            ({**GOOGLE_EVENT, "recurrence": ["RRULE:FREQ=DAILY;COUNT=3"]}, "Recurring"),
+        ],
+        ids=["all-day", "recurring-series"],
+    )
+    def test_replace_unrepresentable_event_is_refused_without_updating(
+        self,
+        provider: GoogleCalendarProvider,
+        events: FakeEvents,
+        resource: dict[str, Any],
+        message: str,
+    ) -> None:
+        events.enqueue("get", resource)
+        with pytest.raises(InvalidRequest, match=message):
+            provider.replace_event("abc123def456", event_input())
+        assert [method for method, _ in events.calls] == ["get"]
+
+    def test_replace_single_occurrence_of_recurring_event_is_allowed(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        occurrence = {
+            **GOOGLE_EVENT,
+            "id": "series_20261007T150000Z",
+            "recurringEventId": "series",
+            "originalStartTime": GOOGLE_EVENT["start"],
+        }
+        events.enqueue("get", occurrence)
+        events.enqueue("update", {**occurrence, "summary": "Moved"})
+        replaced = provider.replace_event("series_20261007T150000Z", event_input(title="Moved"))
+        assert [method for method, _ in events.calls] == ["get", "update"]
+        assert events.calls[1][1]["body"]["recurringEventId"] == "series"
+        assert replaced.id == "series_20261007T150000Z"
+
     def test_delete_success_and_already_deleted(
         self, provider: GoogleCalendarProvider, events: FakeEvents
     ) -> None:

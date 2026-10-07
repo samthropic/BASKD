@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from baskd import __version__
+from baskd.app import create_app
+from baskd.errors import ALL_DAY_NOT_REPLACEABLE
+from baskd.models import Event
+from baskd.providers.memory import InMemoryCalendarProvider
+from baskd.settings import Settings
 from tests.conftest import event_payload
 
 
@@ -188,13 +194,83 @@ class TestReplace:
         assert body["location"] is None
         assert client.get(f"/events/{created['id']}").json() == body
 
+    def test_sets_then_clears_optional_fields(self, client: TestClient) -> None:
+        created = create(client, description=None, location=None)
+        url = f"/events/{created['id']}"
+        filled = client.put(url, json=event_payload(description="Agenda", location="Lobby"))
+        assert filled.status_code == 200
+        assert (filled.json()["description"], filled.json()["location"]) == ("Agenda", "Lobby")
+        # Explicit null and an empty string clear a field just like omitting it.
+        cleared = client.put(url, json=event_payload(description=None, location=""))
+        assert cleared.status_code == 200
+        assert (cleared.json()["description"], cleared.json()["location"]) == (None, None)
+        assert client.get(url).json() == cleared.json()
+
+    def test_accepts_any_offset_and_returns_utc(self, client: TestClient) -> None:
+        created = create(client)
+        response = client.put(
+            f"/events/{created['id']}",
+            json=event_payload(start="2026-10-08T09:00:00-04:00", end="2026-10-08T09:30:00-04:00"),
+        )
+        assert response.status_code == 200
+        assert response.json()["start"] == "2026-10-08T13:00:00Z"
+        assert response.json()["end"] == "2026-10-08T13:30:00Z"
+
     def test_unknown_id_is_404(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload())
         assert response.status_code == 404
+        assert response.json()["error"]["code"] == "event_not_found"
 
     def test_invalid_body_is_422_even_for_unknown_id(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload(title=""))
         assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"title": "   "},  # blank after stripping
+            {"start": "2026-10-07T15:00:00"},  # naive
+            {"end": "2026-10-07T14:00:00Z"},  # end before start
+            {"end": "2026-10-07T15:00:00Z"},  # end == start
+            {"id": "someone-elses-id"},  # the id comes from the URL only
+            {"all_day": True},  # read-only field
+        ],
+    )
+    def test_invalid_body_is_422_and_event_is_unchanged(
+        self, client: TestClient, overrides: dict[str, Any]
+    ) -> None:
+        created = create(client)
+        response = client.put(f"/events/{created['id']}", json=event_payload(**overrides))
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "validation_error"
+        assert client.get(f"/events/{created['id']}").json() == created
+
+    def test_missing_required_field_is_422(self, client: TestClient) -> None:
+        created = create(client)
+        body = event_payload()
+        del body["end"]
+        response = client.put(f"/events/{created['id']}", json=body)
+        assert response.status_code == 422
+        assert ["body", "end"] in [detail["loc"] for detail in response.json()["error"]["details"]]
+
+    def test_all_day_event_is_400_and_unchanged(self) -> None:
+        all_day = Event(
+            id="holiday",
+            title="Holiday",
+            start=datetime(2026, 11, 26, tzinfo=UTC),
+            end=datetime(2026, 11, 27, tzinfo=UTC),
+            all_day=True,
+        )
+        provider = InMemoryCalendarProvider([all_day])
+        app = create_app(settings=Settings(provider="memory", _env_file=None), provider=provider)
+        with TestClient(app) as client:
+            response = client.put("/events/holiday", json=event_payload())
+            assert response.status_code == 400
+            assert response.json()["error"] == {
+                "code": "invalid_request",
+                "message": ALL_DAY_NOT_REPLACEABLE,
+            }
+            assert client.get("/events/holiday").json()["all_day"] is True
 
 
 class TestDelete:
