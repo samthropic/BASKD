@@ -7,6 +7,11 @@ on the first try. When this document and reality disagree, fix the document in t
 
 ## 1. Selecting work
 
+For the October 14 review milestone, read
+[`docs/REVIEW_RELEASE_CHECKLIST.md`](docs/REVIEW_RELEASE_CHECKLIST.md) for current evidence,
+release steps, and proposed task owners. Owners must acknowledge or swap those tasks;
+the checklist does not override the review and release rules below.
+
 - **Everything is a GitHub Issue first.** Bugs use `.github/ISSUE_TEMPLATE/bug_report.md`,
   features use `feature_report.md`. An issue is ready to pick up when it has an owner, a
   rough size (S ≤ 2h, M ≤ 1 day, L = split it), a reviewer, and lists the issues it depends on.
