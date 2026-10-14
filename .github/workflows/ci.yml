@@ -1,0 +1,121 @@
+# Continuous integration. Required to be green before merging (see AGENTS.md).
+#
+# Jobs:
+#   checks       lint, formatting, static types, unit tests with coverage (every push / PR)
+#   integration  the real Google Calendar round trip; needs repository secrets and therefore
+#                runs only for pushes to main, same-repo PRs, or manual dispatch
+#   docker       proves the container image builds and serves /health
+#
+# Third-party actions are pinned to commit SHAs (the version is in the trailing comment).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - name: Install Python (version from .python-version)
+        run: uv python install
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Formatting
+        run: uv run ruff format --check .
+      - name: Static types
+        run: uv run mypy
+      - name: Unit tests
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  integration:
+    name: Integration (real Google Calendar)
+    needs: checks
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    # Serialise runs: they share one test calendar.
+    concurrency:
+      group: integration-shared-test-calendar
+      cancel-in-progress: false
+    env:
+      BASKD_PROVIDER: google
+      BASKD_GOOGLE_CREDENTIALS_JSON: ${{ secrets.BASKD_GOOGLE_CREDENTIALS_JSON }}
+      BASKD_GOOGLE_CALENDAR_ID: ${{ secrets.BASKD_GOOGLE_CALENDAR_ID }}
+    steps:
+      - name: Check that provider secrets are configured
+        id: secrets
+        run: |
+          if [ -z "$BASKD_GOOGLE_CREDENTIALS_JSON" ] || [ -z "$BASKD_GOOGLE_CALENDAR_ID" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Integration tests skipped: BASKD_GOOGLE_* repository secrets are not set (see docs/HUMAN_STEPS.md)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.secrets.outputs.configured == 'true'
+        with:
+          persist-credentials: false
+      - name: Install uv
+        if: steps.secrets.outputs.configured == 'true'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - name: Install Python and locked dependencies
+        if: steps.secrets.outputs.configured == 'true'
+        run: uv python install && uv sync --locked
+      - name: Integration tests
+        if: steps.secrets.outputs.configured == 'true'
+        run: uv run pytest -m integration -ra
+
+  docker:
+    name: Docker image builds and serves /health
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build --load --tag baskd:ci .
+      - name: Start container with the in-memory provider
+        run: docker run --detach --name baskd --publish 8000:8000 --env BASKD_PROVIDER=memory baskd:ci
+      - name: Wait for /health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health; then echo; exit 0; fi
+            sleep 1
+          done
+          echo "service did not become healthy"; exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs baskd || true

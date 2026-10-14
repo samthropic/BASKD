@@ -178,3 +178,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# BASK'D: local secrets and provider credentials (never commit these)
+secrets/*
+!secrets/.gitkeep
+*.service-account.json
+.env.*
+!.env.example
+
+# BASK'D: local tooling
+.coverage
+coverage.xml
+.DS_Store
