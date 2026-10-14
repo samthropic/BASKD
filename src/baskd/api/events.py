@@ -83,7 +83,17 @@ def list_events(query: Annotated[ListEventsQuery, Query()], provider: Provider) 
     "/{event_id}",
     response_model=Event,
     summary="Get one event",
-    responses=documented_errors(status.HTTP_404_NOT_FOUND, *PROVIDER_FAILURES),
+    description=(
+        "Read one event by its opaque provider-assigned id without changing it. Returns "
+        "the provider-neutral Event model with UTC timestamps, including existing all-day "
+        "events and recurring occurrences. Missing, deleted or cancelled events return "
+        "404 event_not_found; ids longer than 1024 characters return 422 validation_error."
+    ),
+    responses=documented_errors(
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        *PROVIDER_FAILURES,
+    ),
 )
 def get_event(event_id: EventId, provider: Provider) -> Event:
     return provider.get_event(event_id)
