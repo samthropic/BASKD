@@ -7,6 +7,10 @@ Release notes on GitHub are built from the matching section here.
 ## [Unreleased]
 
 ### Added
+- Get Event HTTP contract tests shared by the in-memory and Google adapters (fake SDK),
+  including injection, app isolation, UTC output, optional fields and failure translation.
+- Explicit Get Event read guarantees in the provider port, README and OpenAPI, including
+  the existing `422 validation_error` response for an overlong id (no API behaviour change).
 - Milestone 1 ("first working version", Levels 1-2): FastAPI calendar service with a
   pluggable provider.
 - Endpoints: `GET /health`, `POST /events`, `GET /events/{id}`,

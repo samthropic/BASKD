@@ -72,6 +72,25 @@ Arda shares `secrets/service-account.json` and the calendar ID privately (not in
 | 2026-10-07 | Bryant Luna-Ramos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
 | 2026-10-07 | Sam Fiallos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
 
+## Levels 3–4: Get Event evidence for the review release
+
+The source handout's full Level 3–4 wording still needs to be checked before claiming
+milestone completion. This is implementation evidence for Arda's operation (#7), not a
+sign-off for the other owners or the whole release.
+
+| Area | Implementation | Executable evidence |
+| --- | --- | --- |
+| Provider-independent interface | `CalendarProvider.get_event(str) -> Event` documents read-only behavior, UTC output, optional fields, all-day/occurrence reads and domain failures | `test_get_contract.py::test_read_contract` runs the same HTTP assertions with memory and Google adapters; Google uses an offline fake SDK |
+| Inject the implementation | `create_app(provider=...)` stores the supplied provider; `get_provider` resolves it per app | Shared read test makes the provider factory fail if called; checks the selected provider at `/health` |
+| Independent app instances | No global provider is shared between app factories | `test_two_apps_keep_their_own_provider` reads the same id from two apps with different calendars |
+| Error contract | Missing/deleted/cancelled → 404; authentication → 502; temporary failure → 503; overlong id → 422 before calling the provider | Missing/deleted, Google HTTP failure and invalid-id tests in `test_get_contract.py` |
+| Public documentation | README read guarantees and OpenAPI 200/404/422/502/503 responses | `test_get_openapi_documents_contract` |
+
+Still required: owner/reviewer approval, exact Level 3–4 handout comparison, current
+real-Google verification, remaining owners' evidence, staff feedback, merge and release
+verification under `AGENTS.md` §5. Offline Google adapter tests do not replace the real
+integration run.
+
 ## 2. Assumptions and decisions (each one is a choice the handout left open)
 
 | Decision | Alternatives considered | Why this one | Consequence |

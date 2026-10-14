@@ -74,7 +74,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | --- | --- | --- | --- |
 | `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
 | `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `502`, `503` |
-| `GET /events/{id}` | Fetch one event | `200` event | `404`, `502`, `503` |
+| `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `502`, `503` |
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `502`, `503` |
 | `PUT /events/{id}` | Replace every client-editable field | `200` event | `404`, `422`, `400`, `502`, `503` |
 | `DELETE /events/{id}` | Delete | `204` | `404` (also when already deleted), `502`, `503` |
@@ -93,6 +93,13 @@ An event looks like:
   "web_link": "https://www.google.com/calendar/event?eid=…"   // link into the provider's UI, if any
 }
 ```
+
+`GET /events/{id}` reads without changing the event. Treat the id as opaque (1–1024
+characters); a longer id returns `422 validation_error`. A successful read returns the
+same provider-neutral event shape above with UTC times and nullable optional fields.
+Existing all-day events and individual recurring occurrences can be read. A missing,
+deleted or cancelled event returns `404 event_not_found`. Provider authentication failures
+return `502`; temporary unavailability returns `503` with `Retry-After: 5`.
 
 To create or replace one, send `title`, `start`, `end` and optionally `description`, `location`.
 
