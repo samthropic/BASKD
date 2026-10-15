@@ -56,7 +56,11 @@ SERIES_NOT_REPLACEABLE = (
 
 
 class ProviderUnavailable(CalendarError):
-    """The provider is temporarily unavailable (timeout, network error, rate limit, 5xx)."""
+    """The provider is temporarily unavailable (timeout, network error, rate limit, 5xx).
+
+    Retryable for reads, ``PUT`` and ``DELETE``. A create that timed out may still have
+    succeeded at the provider, so callers should check before re-sending it.
+    """
 
     code = "provider_unavailable"
     category = "provider_failure"
