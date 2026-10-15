@@ -68,8 +68,24 @@ code; nobody "owns" a module in the sense of being the only person allowed to to
 
 ## 7. What we learned from the release
 
-_To be written after the review release: one observation about how the workflow worked, the
-evidence (links to issues, reviews, releases), and the single adjustment we made in AGENTS.md._
+**Observation (`v0.1.0-rc.1`, October 14).** Our release procedure (`AGENTS.md` §5,
+step 4) has a teammate verify the tag from a fresh checkout *before* it is published. For
+rc.1 that had not happened when the prerelease went out: its notes list the verification as
+"still pending (owner: Karthik)" ([release](https://github.com/samthropic/BASKD/releases/tag/v0.1.0-rc.1)). The first independent fresh checkout was
+Team 6's review that evening ([PR #1 comment](https://github.com/samthropic/BASKD/pull/1#issuecomment-6181155120)). It ran on Windows and found a
+blocking failure: time zones declared by Google silently became UTC, because Windows has no
+time-zone database and we did not depend on `tzdata` (#17, fixed in #19). Neither our CI
+(Linux) nor our laptops (macOS) could have shown it, so the skipped step was exactly the one
+that might have caught it, had the verifier used another OS.
+
+**Adjustment.** `AGENTS.md` §5 now says the coordinator publishes only once the
+fresh-checkout result is linked on the draft, and that the verifier states their OS and uses
+one CI does not cover when anyone has one. We considered adding a Windows job to CI; it is a
+reasonable follow-up, but it changes CI, so it should be proposed on its own rather than
+slipped into a docs change.
+
+_Proposed by Arda after publishing rc.1; the team accepts or amends it by reviewing the PR
+that added it._
 
 ## Acceptance
 

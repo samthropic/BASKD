@@ -7,10 +7,12 @@ on the first try. When this document and reality disagree, fix the document in t
 
 ## 1. Selecting work
 
-For the October 14 review milestone, read
-[`docs/REVIEW_RELEASE_CHECKLIST.md`](docs/REVIEW_RELEASE_CHECKLIST.md) for current evidence,
-release steps, and proposed task owners. Owners must acknowledge or swap those tasks;
-the checklist does not override the review and release rules below.
+For the October 21 final release, read
+[`docs/FINAL_RELEASE_CHECKLIST.md`](docs/FINAL_RELEASE_CHECKLIST.md) for what is still
+required, current evidence and proposed task owners (the October 14 list is in
+[`docs/REVIEW_RELEASE_CHECKLIST.md`](docs/REVIEW_RELEASE_CHECKLIST.md)). Owners must
+acknowledge or swap those tasks; the checklist does not override the review and release
+rules below.
 
 - **Everything is a GitHub Issue first.** Bugs use `.github/ISSUE_TEMPLATE/bug_report.md`,
   features use `feature_report.md`. An issue is ready to pick up when it has an owner, a
@@ -104,9 +106,12 @@ coordinator than the review release):
    `release.yml` creates a **draft** GitHub Release with auto-generated notes.
 4. A **different teammate** does a fresh checkout of the tag (`git clone`, `git checkout
    v0.1.0-rc.1`), follows the README, runs `make check` and the demo, and posts the result
-   (link to their terminal output or CI run) on the release draft.
+   (link to their terminal output or CI run) on the release draft. They state their OS and,
+   when anyone on the team has one, use an OS that CI does not cover (CI runs Linux).
 5. The coordinator replaces the auto-generated notes with the CHANGELOG section plus links to
    the CI run and the verification above, marks prereleases as such, and publishes.
+   **Not before step 4's result is linked on the draft**: a release that cannot be verified
+   stays a draft, even if that means missing the date (see `docs/TEAM_AGREEMENT.md` §7).
 6. Announce in the team channel; move the issues to Released.
 
 **Defective release:** publish a GitHub issue titled `Release vX.Y.Z: <problem>` within the
