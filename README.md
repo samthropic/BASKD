@@ -117,14 +117,18 @@ curl -i http://127.0.0.1:8000/events \
 
 Rules every client can rely on (each is enforced by a test):
 
-- **Timestamps in must carry an offset** (`…Z` or `…-04:00`); naive timestamps are rejected
-  with `422`, not guessed. **Timestamps out are UTC.** Sub-second precision is dropped.
+- **Timestamps in must be ISO 8601 strings with an offset** (`…Z` or `…-04:00`); naive
+  timestamps and numbers or numeric strings (Unix time such as `0`) are rejected with `422`,
+  not guessed. **Timestamps out are UTC.** Sub-second precision is dropped, from event times
+  and from the `from`/`to` bounds alike (Google ignores it in list bounds too).
 - `end` must be strictly after `start`. `title` must be non-blank (≤ 1024 chars);
   `description` ≤ 8192 chars and `location` ≤ 1024 chars. Unknown fields in the body or query
   string are rejected (`422`), so a typo like `?form=` cannot silently return the wrong data.
 - Listing uses **overlap semantics** on the half-open window `[from, to)`: an event is
   included when `event.end > from` and `event.start < to`. Either bound may be omitted.
-  `limit` is 1-250 (default 50); `cursor` is opaque and only valid with the same `from`/`to`.
+  `limit` is 1-250 (default 50); `cursor` is opaque and only valid with the same `from`/`to`
+  as the request that returned it: another window returns `400 invalid_request` (`limit`
+  may change between pages).
 - `PUT` is a full replacement: optional fields you omit (or send as `null` or `""`) are
   cleared, and the `id` never changes. The body is validated before the event is looked up,
   so an invalid body is `422` even for an unknown id.
