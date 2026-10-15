@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, Response, status
 
+from baskd.api.cursors import unwrap_cursor, wrap_cursor
 from baskd.api.dependencies import Provider
 from baskd.api.errors import documented_errors
 from baskd.models import Event, EventInput, EventPage, ListEventsQuery
@@ -69,6 +70,12 @@ def create_event(
     "",
     response_model=EventPage,
     summary="List events overlapping a time window",
+    description=(
+        "Events overlapping the half-open window `[from, to)`, ordered by start. Follow "
+        "`next_cursor` until it is `null`. A cursor is only valid with the same `from` and "
+        "`to` as the request that returned it (`limit` may change); any other window "
+        "returns `400 invalid_request`."
+    ),
     responses=documented_errors(
         status.HTTP_400_BAD_REQUEST,
         status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -76,7 +83,10 @@ def create_event(
     ),
 )
 def list_events(query: Annotated[ListEventsQuery, Query()], provider: Provider) -> EventPage:
-    return provider.list_events(query)
+    page = provider.list_events(
+        query.model_copy(update={"cursor": unwrap_cursor(query.cursor, query)})
+    )
+    return page.model_copy(update={"next_cursor": wrap_cursor(page.next_cursor, query)})
 
 
 @router.get(

@@ -8,6 +8,9 @@ covered by ``tests/integration``.
 from __future__ import annotations
 
 import json
+import logging
+import zoneinfo
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -145,6 +148,16 @@ def provider(events: FakeEvents) -> GoogleCalendarProvider:
 # -- pure mapping -----------------------------------------------------------------------------
 
 
+@pytest.fixture
+def no_system_tz_database() -> Iterator[None]:
+    """Hide the OS time-zone database, as on Windows, so only ``tzdata`` can resolve zones."""
+    zoneinfo.reset_tzpath(to=())
+    zoneinfo.ZoneInfo.clear_cache()
+    yield
+    zoneinfo.reset_tzpath()
+    zoneinfo.ZoneInfo.clear_cache()
+
+
 class TestEventFromGoogle:
     def test_maps_timed_event_to_utc(self) -> None:
         event = event_from_google(GOOGLE_EVENT)
@@ -181,11 +194,37 @@ class TestEventFromGoogle:
         resource = {
             "id": "z1",
             "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "America/New_York"},
-            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "Nowhere/Invalid"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "America/New_York"},
         }
         event = event_from_google(resource)
         assert event.start == T0  # 11:00 New York == 15:00 UTC in October
-        assert event.end == datetime(2026, 10, 7, 12, 0, tzinfo=UTC)  # unknown zone -> UTC
+
+    @pytest.mark.usefixtures("no_system_tz_database")
+    def test_declared_zone_resolves_without_a_system_tz_database(self) -> None:
+        """Windows has no IANA database; the declared ``tzdata`` dependency must supply it.
+
+        Regression test for the Team 6 review: without ``tzdata`` this zone silently
+        resolved to UTC, so 11:00 New York came back as 11:00 UTC instead of 15:00 UTC.
+        """
+        resource = {
+            "id": "z2",
+            "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "America/New_York"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "America/New_York"},
+        }
+        assert event_from_google(resource).start == T0
+
+    def test_unknown_declared_zone_is_read_as_utc_with_a_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        resource = {
+            "id": "z3",
+            "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "Nowhere/Invalid"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "Nowhere/Invalid"},
+        }
+        with caplog.at_level(logging.WARNING, logger="baskd.providers.google"):
+            event = event_from_google(resource)
+        assert event.start == datetime(2026, 10, 7, 11, 0, tzinfo=UTC)
+        assert "Nowhere/Invalid" in caplog.text
 
     def test_missing_times_is_a_provider_error(self) -> None:
         with pytest.raises(ProviderError):
@@ -337,6 +376,20 @@ class TestProviderCalls:
         }
         assert [event.id for event in page.items] == ["abc123def456"]
         assert page.next_cursor == "token-2"
+
+    def test_list_sends_bounds_in_whole_seconds(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        """Same instant the in-memory provider filters on, so both agree at the boundary."""
+        events.enqueue("list", {"items": []})
+        provider.list_events(
+            ListEventsQuery.model_validate(
+                {"from": "2026-10-07T14:00:00.999Z", "to": "2026-10-07T15:00:00.500Z"}
+            )
+        )
+        _, kwargs = events.calls[0]
+        assert kwargs["timeMin"] == "2026-10-07T14:00:00Z"
+        assert kwargs["timeMax"] == "2026-10-07T15:00:00Z"
 
     def test_list_without_window_omits_bounds(
         self, provider: GoogleCalendarProvider, events: FakeEvents

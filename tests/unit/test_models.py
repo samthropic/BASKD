@@ -54,6 +54,19 @@ class TestEventInput:
         assert event.description is None
         assert event.location is None
 
+    @pytest.mark.parametrize("value", [0, 3600.5, "0", "1696000000", "1696000000.5", True])
+    def test_rejects_numeric_timestamps(self, value: object) -> None:
+        """Lax pydantic would read these as Unix time (Team 6 review: ``0`` made a 1970 event)."""
+        with pytest.raises(ValidationError, match="ISO 8601"):
+            EventInput.model_validate({"title": "x", "start": value, "end": "2026-10-07T16:00:00Z"})
+
+    @pytest.mark.parametrize("value", ["2026-10-07T15:00:00Z", "2026-10-07 11:00:00-04:00"])
+    def test_accepts_iso_strings_with_either_separator(self, value: str) -> None:
+        event = EventInput.model_validate(
+            {"title": "x", "start": value, "end": "2026-10-07T16:00:00Z"}
+        )
+        assert event.start == T0
+
     def test_truncates_sub_second_precision(self) -> None:
         start = T0.replace(microsecond=123456)
         event = EventInput(title="x", start=start, end=start + timedelta(hours=1))
@@ -114,6 +127,26 @@ class TestListEventsQuery:
     def test_rejects_inverted_window(self) -> None:
         with pytest.raises(ValidationError, match="'to' must be after 'from'"):
             ListEventsQuery(time_min=T0, time_max=T0)
+
+    @pytest.mark.parametrize("bound", ["from", "to"])
+    @pytest.mark.parametrize("value", ["0", "1696000000", 0])
+    def test_rejects_numeric_bounds(self, bound: str, value: object) -> None:
+        with pytest.raises(ValidationError, match="ISO 8601"):
+            ListEventsQuery.model_validate({bound: value})
+
+    def test_truncates_bounds_to_whole_seconds(self) -> None:
+        """Google ignores fractional seconds in timeMin/timeMax; every provider must too."""
+        query = ListEventsQuery.model_validate(
+            {"from": "2026-10-07T14:00:00.999Z", "to": "2026-10-07T15:00:00.500Z"}
+        )
+        assert query.time_min == T0 - timedelta(hours=1)
+        assert query.time_max == T0
+
+    def test_sub_second_window_collapsing_to_empty_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="'to' must be after 'from'"):
+            ListEventsQuery.model_validate(
+                {"from": "2026-10-07T15:00:00.100Z", "to": "2026-10-07T15:00:00.900Z"}
+            )
 
     @pytest.mark.parametrize("limit", [0, MAX_PAGE_SIZE + 1])
     def test_rejects_out_of_range_limit(self, limit: int) -> None:
