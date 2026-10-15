@@ -251,6 +251,9 @@ reached the provider.
 
 ## 6. Testing strategy
 
+The full strategy (cases chosen per behaviour, evidence that tests detect defects, known
+gaps) is in [`TESTING.md`](../TESTING.md). In short:
+
 | Layer | Where | Doubles | Runs |
 | --- | --- | --- | --- |
 | Models (validation rules) | `tests/unit/test_models.py` | none | always |
