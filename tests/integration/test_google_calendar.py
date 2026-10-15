@@ -10,6 +10,8 @@ calendar do not interfere.
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
@@ -223,3 +225,36 @@ def test_pagination_cursor_round_trip(client: TestClient, cleanup: list[str]) ->
         if cursor is None:
             break
     assert [event_id for event_id in seen if event_id in ids] == ids
+
+
+def test_calendar_the_service_cannot_see_is_an_access_denial(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Level 5: a real provider failure, translated before it reaches the caller.
+
+    Same credentials, but a calendar id that was never shared with the service account.
+    Google answers 404 for the calendar, which the API reports as an access denial.
+    """
+    settings = _configured_settings()
+    if settings is None:
+        pytest.skip("BASKD_PROVIDER=google with credentials is not configured")
+    unshared = settings.model_copy(
+        update={"google_calendar_id": f"baskd-not-shared-{uuid4().hex}@group.calendar.google.com"}
+    )
+    with (
+        TestClient(create_app(settings=unshared)) as denied,
+        caplog.at_level(logging.WARNING, logger="baskd"),
+    ):
+        response = denied.get("/events", params={"limit": 1})
+
+    assert response.status_code == 502, response.text
+    assert response.json()["error"]["code"] == "provider_auth_error"
+    assert "google" not in response.text.lower()
+    line = next(
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "baskd.api.failures"
+    )
+    assert line["category"] == "access_denied"
+    assert line["provider_involved"] is True
+    assert line["request_id"] == response.headers["X-Request-ID"]

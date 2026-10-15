@@ -132,12 +132,45 @@ Rules every client can rely on (each is enforced by a test):
 - `PUT` is a full replacement: optional fields you omit (or send as `null` or `""`) are
   cleared, and the `id` never changes. The body is validated before the event is looked up,
   so an invalid body is `422` even for an unknown id.
-- Every error has one shape:
-  `{"error": {"code": "<stable_code>", "message": "<human readable>", "details": [...]}}`
-  with `details` only on `validation_error`. Codes: `validation_error` (422),
-  `invalid_request` (400), `event_not_found` (404), `provider_unavailable` (503, with
-  `Retry-After`), `provider_auth_error` and `provider_error` (502), `internal_error` (500).
+- Every error has one shape, listed under [Errors](#errors) below.
 - URL gotcha: a `+` in a query-string timestamp must be percent-encoded (`%2B`), or use `Z`.
+
+### Errors
+
+Every non-2xx response has the body
+`{"error": {"code": "<stable_code>", "message": "<human readable>", "details": [...]}}`,
+with `details` (per-field `loc`/`msg`/`type`, never your input echoed back) only on
+`validation_error`. Branch on `code`; the `message` is for people and may change. Messages
+are the service's own: provider error text is never passed through.
+
+| `code` | HTTP | Kind of failure | When | Retry the same request? |
+| --- | --- | --- | --- | --- |
+| `validation_error` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
+| `invalid_request` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
+| `event_not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
+| `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
+| `provider_auth_error` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
+| `provider_unavailable` | 503 + `Retry-After: 5` | provider failure | Timeout, network error, provider 5xx/429 or exhausted quota | Yes, after `Retry-After` |
+| `provider_error` | 502 | provider failure | Any other unexpected provider response | Not blindly: the outcome is unknown, so a retried create may duplicate. Re-read (`GET`/list) first |
+| `internal_error` | 500 | bug | An unexpected exception in the service | No: report it with the `X-Request-ID` |
+
+A failed operation is never reported as a success, and a request rejected with 4xx before
+reaching the provider (422, cursor 400) has made no change.
+
+**Request ids and failure logs.** Every response carries an `X-Request-ID` header: yours if
+you send a well-formed one (`[A-Za-z0-9._:-]`, ≤ 128 chars), otherwise a fresh id. Each
+failed request writes one JSON log line on the `baskd.api.failures` logger:
+
+```json
+{"event": "request_failed", "operation": "get_event", "status": 404, "error": "event_not_found",
+ "category": "not_found", "provider_involved": true, "retryable": false, "method": "GET",
+ "route": "/events/{event_id}", "request_id": "6f1c…"}
+```
+
+4xx lines are `WARNING`, 5xx lines `ERROR`; only `internal_error` carries a stack trace.
+Logs never contain request or response bodies, query strings, event ids (the route
+*template* is logged), headers, credentials or provider error text. The Google adapter adds
+its own line with the provider's HTTP status and `reason` codes for provider failures.
 
 ### Provider limitations reflected in the API
 

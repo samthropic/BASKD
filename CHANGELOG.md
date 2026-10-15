@@ -6,6 +6,22 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+### Added (Level 5: consistent failure handling)
+- Error table in the README: for every error code, when it occurs, its HTTP status, which
+  kind of failure it is (invalid input, missing resource, access denied, provider failure,
+  bug) and whether the caller may retry.
+- `X-Request-ID` on every response (the caller's own id if well-formed, otherwise a new one).
+- One structured JSON `request_failed` log line per failed request: operation, error code
+  and category, HTTP status, whether the provider was called, retryability and request id.
+  No bodies, query strings, event ids, credentials or provider text are logged; only bugs
+  (`internal_error`) log a stack trace.
+- Integration test for a real provider failure: a calendar not shared with the service
+  account is reported as `502 provider_auth_error`.
+
+### Changed
+- Error messages no longer include Google's error text (it can echo request data); they
+  are the service's own provider-neutral sentences. Codes and statuses are unchanged.
+
 ### Fixed (Team 6 review of `v0.1.0-rc.1`)
 - Time zones declared by Google now resolve on machines without a system time-zone database
   (Windows): `tzdata` is a declared dependency. Before, such zones silently became UTC.
