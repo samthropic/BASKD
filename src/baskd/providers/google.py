@@ -301,11 +301,18 @@ def _parse_edge(edge: Mapping[str, Any]) -> tuple[datetime, bool]:
 
 
 def _zone(name: str | None) -> tzinfo:
+    """Resolve Google's IANA ``timeZone`` name for a naive ``dateTime``.
+
+    Zone data comes from the OS or, where the OS has none (Windows), from the ``tzdata``
+    package we depend on, so a valid name always resolves. An unknown name falls back to
+    UTC with a warning rather than failing the whole request.
+    """
     if not name:
         return UTC
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError:
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("Unknown time zone %r on a Google event; reading it as UTC", name)
         return UTC
 
 

@@ -6,6 +6,18 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+### Fixed (Team 6 review of `v0.1.0-rc.1`)
+- Time zones declared by Google now resolve on machines without a system time-zone database
+  (Windows): `tzdata` is a declared dependency. Before, such zones silently became UTC.
+  An unknown zone name still reads as UTC but now logs a warning.
+- Numbers and numeric strings (Unix time) are rejected as timestamps with `422` instead of
+  being read as 1970 dates, in event bodies and in `from`/`to`.
+- `from`/`to` are truncated to whole seconds, so the in-memory and Google providers agree at
+  the window boundary.
+- A list cursor is only accepted with the `from`/`to` it was issued for; another window
+  returns `400 invalid_request` instead of silently continuing a different listing.
+  Cursors are re-encoded by the API, so cursors issued by earlier versions are invalid.
+
 ### Added
 - Get Event HTTP contract tests shared by the in-memory and Google adapters (fake SDK),
   including injection, app isolation, UTC output, optional fields and failure translation.

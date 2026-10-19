@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime
 from typing import Any
 
@@ -100,6 +101,17 @@ class TestCreate:
         else:
             assert ["body", field] in locations
 
+    def test_numeric_timestamps_are_422_and_nothing_is_created(self, client: TestClient) -> None:
+        """Team 6 review repro: this used to return 201 and create a 1970 event."""
+        response = client.post(
+            "/events", json={"title": "numeric timestamps", "start": 0, "end": 3600}
+        )
+        assert response.status_code == 422
+        locations = [detail["loc"] for detail in response.json()["error"]["details"]]
+        assert ["body", "start"] in locations
+        assert ["body", "end"] in locations
+        assert client.get("/events").json()["items"] == []
+
     def test_missing_body_is_422(self, client: TestClient) -> None:
         response = client.post("/events")
         assert response.status_code == 422
@@ -140,6 +152,15 @@ class TestList:
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["items"]] == [earlier["id"], later["id"]]
 
+    def test_fractional_upper_bound_is_truncated_like_google(self, client: TestClient) -> None:
+        """Team 6 review: memory used to include a 15:00 event for ``to=15:00:00.500``."""
+        create(client)  # starts at 2026-10-07T15:00:00Z
+        response = client.get(
+            "/events", params={"from": "2026-10-07T00:00:00Z", "to": "2026-10-07T15:00:00.500Z"}
+        )
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+
     def test_pagination_round_trip(self, client: TestClient) -> None:
         ids = [
             create(
@@ -160,6 +181,8 @@ class TestList:
         [
             {"from": "2026-10-08T00:00:00Z", "to": "2026-10-07T00:00:00Z"},  # inverted
             {"from": "2026-10-07T00:00:00"},  # naive
+            {"from": "0"},  # Unix time is not an ISO 8601 timestamp
+            {"to": "1696000000"},
             {"limit": 0},
             {"limit": 251},
             {"limit": "many"},
@@ -172,10 +195,70 @@ class TestList:
         assert response.status_code == 422, response.text
         assert response.json()["error"]["code"] == "validation_error"
 
-    def test_malformed_cursor_is_400(self, client: TestClient) -> None:
-        response = client.get("/events", params={"cursor": "garbage"})
+    @pytest.mark.parametrize(
+        "cursor",
+        [
+            "garbage",
+            "!!!",
+            base64.urlsafe_b64encode(b"[1, 2]").decode(),  # valid JSON, wrong shape
+            base64.urlsafe_b64encode(b'{"c": 1, "w": [null, null]}').decode(),
+        ],
+    )
+    def test_malformed_cursor_is_400(self, client: TestClient, cursor: str) -> None:
+        response = client.get("/events", params={"cursor": cursor})
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid_request"
+
+    def test_traversal_returns_every_event_exactly_once(self, client: TestClient) -> None:
+        """Seven events, at most three per page: the combined pages are the whole window."""
+        expected = [
+            create(
+                client, start=f"2026-10-07T{hour:02d}:00:00Z", end=f"2026-10-07T{hour:02d}:30:00Z"
+            )["id"]
+            for hour in range(9, 16)
+        ]
+        params: dict[str, Any] = {"from": "2026-10-07T00:00:00Z", "limit": 3}
+        seen: list[str] = []
+        for _ in range(len(expected) + 1):  # bounded: a broken cursor must not loop forever
+            body = client.get("/events", params=params).json()
+            assert len(body["items"]) <= 3
+            seen.extend(item["id"] for item in body["items"])
+            if body["next_cursor"] is None:
+                break
+            params["cursor"] = body["next_cursor"]
+        assert seen == expected
+
+    def test_cursor_reused_with_another_window_is_400(self, client: TestClient) -> None:
+        """Team 6 review repro: this used to return 200 with the 12:00 event."""
+        for hour in (10, 11, 12):
+            create(client, start=f"2026-10-07T{hour}:00:00Z", end=f"2026-10-07T{hour}:30:00Z")
+        first = client.get("/events", params={"from": "2026-10-07T09:00:00Z", "limit": 1}).json()
+
+        response = client.get(
+            "/events",
+            params={"from": "2026-10-07T11:00:00Z", "limit": 1, "cursor": first["next_cursor"]},
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_request"
+
+    def test_cursor_allows_another_limit_and_another_spelling_of_the_window(
+        self, client: TestClient
+    ) -> None:
+        for hour in (10, 11, 12):
+            create(client, start=f"2026-10-07T{hour}:00:00Z", end=f"2026-10-07T{hour}:30:00Z")
+        first = client.get("/events", params={"from": "2026-10-07T09:00:00Z", "limit": 1}).json()
+
+        rest = client.get(
+            "/events",
+            params={
+                "from": "2026-10-07T05:00:00-04:00",
+                "limit": 5,
+                "cursor": first["next_cursor"],
+            },
+        )
+        assert rest.status_code == 200, rest.text
+        assert [item["title"] for item in rest.json()["items"]] == ["Sprint planning"] * 2
+        assert rest.json()["next_cursor"] is None
 
 
 class TestReplace:
