@@ -15,7 +15,7 @@ from baskd.errors import ALL_DAY_NOT_REPLACEABLE
 from baskd.models import Event
 from baskd.providers.memory import InMemoryCalendarProvider
 from baskd.settings import Settings
-from tests.conftest import event_payload
+from tests.conftest import TEXT_LIMITS, event_input, event_payload
 
 
 def create(client: TestClient, **overrides: Any) -> dict[str, Any]:
@@ -101,6 +101,30 @@ class TestCreate:
         else:
             assert ["body", field] in locations
 
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_exactly_at_its_length_limit_is_201_and_stored_whole(
+        self, client: TestClient, field: str, limit: int
+    ) -> None:
+        created = create(client, **{field: "x" * limit})
+        assert created[field] == "x" * limit
+        assert client.get(f"/events/{created['id']}").json()[field] == "x" * limit
+
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_one_past_its_length_limit_is_422_and_nothing_is_created(
+        self, client: TestClient, field: str, limit: int
+    ) -> None:
+        too_long = "x" * (limit + 1)
+        response = client.post("/events", json=event_payload(**{field: too_long}))
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert set(error) == {"code", "message", "details"}
+        assert error["code"] == "validation_error"
+        assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
+            (["body", field], "string_too_long")
+        ]
+        assert too_long not in response.text  # the README promises input is never echoed
+        assert client.get("/events").json()["items"] == []
+
     def test_numeric_timestamps_are_422_and_nothing_is_created(self, client: TestClient) -> None:
         """Team 6 review repro: this used to return 201 and create a 1970 event."""
         response = client.post(
@@ -175,6 +199,35 @@ class TestList:
         second = client.get("/events", params={"limit": 2, "cursor": first["next_cursor"]}).json()
         assert [item["id"] for item in second["items"]] == ids[2:]
         assert second["next_cursor"] is None
+
+    def test_largest_limit_with_exactly_that_many_events_in_the_window_is_one_page(
+        self, client: TestClient, memory_provider: InMemoryCalendarProvider
+    ) -> None:
+        """n = L = 250, the largest page: every event once, and no cursor to an empty page."""
+        expected = [
+            memory_provider.create_event(event_input(offset_minutes=minute)).id
+            for minute in range(250)
+        ]
+        memory_provider.create_event(event_input(offset_minutes=24 * 60))  # next day, outside
+
+        response = client.get(
+            "/events",
+            params={"from": "2026-10-07T00:00:00Z", "to": "2026-10-08T00:00:00Z", "limit": 250},
+        )
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == expected
+        assert response.json()["next_cursor"] is None
+
+    def test_limit_one_past_its_maximum_is_422_naming_the_parameter(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/events", params={"limit": 251})
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "validation_error"
+        assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
+            (["query", "limit"], "less_than_equal")
+        ]
 
     @pytest.mark.parametrize(
         "params",

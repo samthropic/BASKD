@@ -9,7 +9,7 @@ contract itself is in the [README](README.md#the-api).
 | Command | What runs | Needs |
 | --- | --- | --- |
 | `make check` | ruff, ruff format, mypy strict, then `pytest` | nothing |
-| `uv run pytest -m "not integration"` | the fast suite only (~225 tests, ~2 s) | nothing: no network, no credentials |
+| `uv run pytest -m "not integration"` | the fast suite only (~240 tests, ~2 s) | nothing: no network, no credentials |
 | `make test-integration` (`uv run pytest -m integration -ra`) | the real-Google suite (6 tests, ~20 s) | `.env` with `BASKD_PROVIDER=google` and credentials ([`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md)) |
 | `make cov` | fast suite with a line and branch coverage report | nothing |
 
@@ -54,13 +54,18 @@ rejected; `limit` is 1–250. A rejected request writes nothing.
 
 *Partitions and boundaries:* naive vs offset-bearing timestamps; numbers and numeric
 strings, which pydantic would otherwise read as Unix time (a Team 6 finding); `end == start`
-and `end < start`; blank, whitespace-only and over-long titles; text one character past
-each length limit; `limit` 0, 1 and 251; empty cursor; a misspelled query parameter.
+and `end < start`; blank, whitespace-only and over-long titles; text exactly at and one
+character past each length limit (title and location 1024/1025, description 8192/8193);
+`limit` 0, 1, 250 and 251; empty cursor; a misspelled query parameter. The limits are written
+out in the tests (`TEXT_LIMITS` in `tests/conftest.py`) rather than imported from `models.py`,
+so a limit that changes without the README fails.
 
 *Tests:* `test_models.py::TestEventInput`, `TestListEventsQuery`;
 `test_api_events.py::TestCreate::test_invalid_input_is_422_with_details`,
+`test_text_exactly_at_its_length_limit_is_201_and_stored_whole`,
+`test_text_one_past_its_length_limit_is_422_and_nothing_is_created`,
 `test_numeric_timestamps_are_422_and_nothing_is_created`,
-`TestList::test_invalid_query_is_422`,
+`TestList::test_invalid_query_is_422`, `test_limit_one_past_its_maximum_is_422_naming_the_parameter`,
 `TestReplace::test_invalid_body_is_422_and_event_is_unchanged`. Rejection before any provider
 call is shown by `test_get_contract.py::test_invalid_id_is_rejected_before_provider_call` and by
 `provider_involved: false` in `test_failure_logging.py::test_invalid_input_never_reaches_the_provider`.
@@ -88,6 +93,7 @@ that produced it; bounds are truncated to whole seconds.
 | --- | --- |
 | n = 0 | `test_api_events.py::TestList::test_empty`, `test_memory_provider.py::TestList::test_empty_calendar` |
 | 0 < n < L | `test_window_and_ordering` (2 matching, L = 50) |
+| n = L: one page, `next_cursor` null (an off-by-one would add an empty last page) | `test_largest_limit_with_exactly_that_many_events_in_the_window_is_one_page` (n = L = 250, one more event outside the window), `test_memory_provider.py::TestList::test_window_holding_exactly_limit_events_is_one_page_without_cursor` (n = L = 2, one more event outside the window) |
 | n > L, several pages, every event exactly once, pages ≤ L | `test_traversal_returns_every_event_exactly_once` (7 events, L = 3), `test_pagination_round_trip`, `test_memory_provider.py::test_pagination_walks_every_item_exactly_once` |
 | smallest limit, L = 1 | `test_cursor_reused_with_another_window_is_400`, `test_cursor_allows_another_limit_and_another_spelling_of_the_window` |
 | event ending exactly at `from` / starting exactly at `to` | `test_memory_provider.py::TestList::test_window_bounds_are_half_open` |
@@ -161,15 +167,12 @@ What the tests do not establish, so nobody claims they do:
 - **Responsiveness under a slow provider.** Handlers are synchronous and run in FastAPI's
   thread pool, so one slow Google call should not block other requests. No test holds a
   provider call open and shows an unrelated request completing (spec 1.3).
-- **Values exactly at a limit.** We test one past each limit (title 1025, description 8193,
-  location 1025 characters, `limit` 251) but not the largest accepted value (1024, 8192,
-  1024, 250), where an off-by-one in a `<` vs `<=` would show. Owner: whoever next touches
-  `models.py`.
-- **Exactly n = L.** No listing test has exactly `limit` matching events, the boundary
-  where an off-by-one would emit a spurious empty last page. Owner: Bryant.
 - **Provider behaviour we only read about.** Quota, 5xx and timeout handling are tested
   only against fakes; the fractional-second behaviour of `timeMin`/`timeMax` comes from
-  Google's documentation and was not reproduced live.
+  Google's documentation and was not reproduced live. With Google, `next_cursor` is
+  Google's own `nextPageToken`, and no live test has a window holding exactly `limit`
+  events: if Google returns a token there, a client following the cursor gets one empty
+  last page (n = L is tested only on the in-memory provider).
 - **Platforms.** CI runs Linux; we develop on macOS. Windows is covered only by a test that
   hides the OS time-zone database, which is how Team 6's Windows failure was reproduced.
 - **Concurrency.** The in-memory provider uses a lock; nothing tests overlapping writes.
