@@ -9,7 +9,7 @@ then `make run` in one terminal (the service listens on `http://127.0.0.1:8000`)
 commands in a second one. `curl -s http://127.0.0.1:8000/health` should report
 `"provider":"google"`.
 
-## List events: `GET /events` (Bryant Luna-Ramos)
+## List events: `GET /events`
 
 Run on 2026-10-20 at 23:02 ET, Linux, provider `google`, at `ce9b5f8` (`arda/milestone-1` at `3153e3b` plus this docs change; no code differences).
 
