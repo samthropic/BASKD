@@ -11,7 +11,7 @@ Members: Sam Fiallos, Arda Dinc, Bryant Luna-Ramos, Karthik Ganeshan, Daniel Zha
 | Member | Typical hours/week on this project | Usual working windows (with time zone) | Known unavailability |
 | --- | --- | --- | --- |
 | Sam | ~5 | Tuesdays 4:00-9:00PM EST | N/A |
-| Arda | _TBD_ | _TBD_ | _TBD_ |
+| Arda | ~5 | Weeknights, evenings ET | None known |
 | Bryant | ~5 | Weeknights 21:00-24:00 ET | Weekdays 13:00-19:00 ET |
 | Karthik | ~5 | Thursdays 9:00-17:00 ET; async on GitHub other days | None known |
 | Daniel | _TBD_ | _TBD_ | _TBD_ |
