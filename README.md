@@ -8,12 +8,12 @@ A small, complete calendar service: a FastAPI HTTP API in front of a **real cale
 provider (Google Calendar)**, with the provider hidden behind one interface so the same API
 also runs against an in-memory fake for fast, deterministic tests.
 
-**Milestone 1, "first working version" (due Oct 7):** *a polished GitHub repository where you
-talk to your selected vertical's provider and tests to verify; includes Level 1 and Level 2 of
-the specs.* The slice is implemented and tested end to end. The Level definitions themselves
-were not available to the team, so [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) records
-what we assumed they mean, the questions open with staff, and the acceptance criteria;
-[`CHANGELOG.md`](CHANGELOG.md) lists what is in this version.
+**Status: final release `v0.1.0` (spec Levels 1–5).** Every operation runs against the real
+Google Calendar ([`TUTORIAL.md`](TUTORIAL.md) shows each one, expected vs actual), failures
+are reported consistently and logged with request ids, and the provider sits behind one
+injected interface. [`CHANGELOG.md`](CHANGELOG.md) lists what changed in each release;
+[`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) maps the spec levels to evidence.
+Earlier releases: `v0.1.0-alpha.1` (Milestone 1, Oct 7) and `v0.1.0-rc.1` (review release, Oct 14).
 
 ## Team
 
@@ -28,6 +28,7 @@ what we assumed they mean, the questions open with staff, and the acceptance cri
 | Document | What it answers |
 | --- | --- |
 | this README | How do I run it, what does the API do, why is it built this way |
+| [`TUTORIAL.md`](TUTORIAL.md) | The demo: each operation run against the real calendar by its owner, expected vs actual, with screenshots |
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | What exactly did we commit to for Levels 1-2, under which assumptions, and how do we know it works |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Module-by-module tour, the provider interface, how to add a provider |
 | [`TESTING.md`](TESTING.md) | What the tests establish, the cases we chose and why, how to run them, known gaps |

@@ -71,6 +71,7 @@ Arda shares `secrets/service-account.json` and the calendar ID privately (not in
 | 2026-10-06 | Arda Dinc | `f5592e4` | 4 passed | All steps behaved as documented (provider=google) |
 | 2026-10-07 | Bryant Luna-Ramos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
 | 2026-10-07 | Sam Fiallos | `b816b5c` | 4 passed | All steps behaved as documented (provider=google) |
+| 2026-10-21 | Daniel Zhang (macOS) | `3153e3b` | 5 passed | All steps behaved as documented (provider=google); delete demo in `TUTORIAL.md` |
 
 ## Levels 3–4: Get Event evidence for the review release
 

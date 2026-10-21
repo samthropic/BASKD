@@ -105,3 +105,85 @@ curl -s "$API/events?$W"
 This run predates [#20](https://github.com/samthropic/BASKD/pull/20), so the responses have
 no `X-Request-ID` header yet. After #20 merges, step 4 also returns one, and the server logs a
 `request_failed` line with `"provider_involved": false`.
+
+## Delete an event: `DELETE /events/{id}`
+
+Owner: Daniel Zhang. I ran this against our real Google calendar (`provider: google` in
+`/health`) on commit `ff63863` (includes #20, so responses carry `X-Request-ID`), on macOS.
+
+**What this shows:** deleting one event removes it and nothing else; a deleted event can no
+longer be fetched; deleting it a second time is reported honestly as `404`, not as a success.
+
+The whole run is scripted in [`docs/demo/delete-demo.sh`](docs/demo/delete-demo.sh) so
+anyone can repeat it: `bash docs/demo/delete-demo.sh` with the server running. The commands
+below are what it executes.
+
+**Preparation.** Two events in an otherwise empty window on Jan 22, 2027: one to delete
+(10:00 UTC) and one to keep (11:00 UTC), so we can show that deletion is precise.
+
+```bash
+API=http://127.0.0.1:8000
+W='from=2027-01-22T00:00:00Z&to=2027-01-23T00:00:00Z'
+KEEP=$(curl -s $API/events -H 'Content-Type: application/json' \
+  -d '{"title":"BASKD delete demo: keep","start":"2027-01-22T11:00:00Z","end":"2027-01-22T11:30:00Z"}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+GONE=$(curl -s $API/events -H 'Content-Type: application/json' \
+  -d '{"title":"BASKD delete demo: delete me","start":"2027-01-22T10:00:00Z","end":"2027-01-22T10:30:00Z"}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+```
+
+### 1. Delete one event
+
+**Expected:** `204 No Content`, no body, and an `X-Request-ID` header.
+
+```bash
+curl -s -i -X DELETE "$API/events/$GONE"
+```
+
+### 2. Fetch the deleted event
+
+**Expected:** `404` with `{"error": {"code": "event_not_found", ...}}`. Google answers this
+`GET` with the event marked `cancelled`; the service reports it as not found rather than
+returning a ghost event.
+
+```bash
+curl -s -i "$API/events/$GONE"
+```
+
+### 3. List the window
+
+**Expected:** `200` and exactly one item, the "keep" event. Deleting one event did not touch
+its neighbour.
+
+```bash
+curl -s "$API/events?$W"
+```
+
+### 4. Delete the same event again
+
+**Expected:** `404 event_not_found`. Google answers the second delete with `410 Gone`; we
+translate that to the same `404` as step 2 instead of pretending the delete succeeded, so a
+caller retrying a `DELETE` can tell "already gone" from "done just now".
+
+```bash
+curl -s -i -X DELETE "$API/events/$GONE"
+```
+
+### Cleanup
+
+**Expected:** `204` for the remaining event, then `{"items": [], "next_cursor": null}`.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$API/events/$KEEP"
+curl -s "$API/events?$W"
+```
+
+![Delete demo: 204, then 404 on fetch, only the kept event listed, 404 on the second delete, cleanup to an empty window](docs/demo/delete-1-workflow.png)
+
+**Actual:** every step as expected. The server log for the same run shows the two `201`s,
+the `204`, and for each `404` one `request_failed` line with `"operation"`, `"category":
+"not_found"`, `"provider_involved": true` and the same `request_id` the client received.
+The Google adapter's own line shows the raw provider answer behind step 4:
+`http_status=410 reasons=['deleted'] -> event_not_found`.
+
+![Server log: 201, 201, 204, then request_failed lines for the 404s with matching request ids and the Google 410 translation](docs/demo/delete-2-server-log.png)

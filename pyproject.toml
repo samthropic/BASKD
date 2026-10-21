@@ -1,6 +1,6 @@
 [project]
 name = "baskd"
-version = "0.1.0a1"
+version = "0.1.0"
 description = "BASK'D: a small calendar service (FastAPI) backed by a real calendar provider (Google Calendar)."
 readme = "README.md"
 license = { file = "LICENSE" }
