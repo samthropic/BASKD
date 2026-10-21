@@ -18,6 +18,14 @@ Release notes on GitHub are built from the matching section here.
 - Integration test for a real provider failure: a calendar not shared with the service
   account is reported as `502 provider_auth_error`.
 
+### Documentation
+- `TESTING.md` (testing strategy and known gaps), `docs/COST.md` (cost of `GET /events`),
+  `docs/DECISIONS.md` (service account bound to one calendar), and
+  `docs/FINAL_RELEASE_CHECKLIST.md` with draft `v0.1.0` release notes.
+- Release process: the coordinator publishes only after the fresh-checkout verification is
+  linked, and the verifier states their OS (`AGENTS.md` §5, reasons in
+  `docs/TEAM_AGREEMENT.md` §7).
+
 ### Changed
 - Error messages no longer include Google's error text (it can echo request data); they
   are the service's own provider-neutral sentences. Codes and statuses are unchanged.
