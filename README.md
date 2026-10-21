@@ -30,6 +30,10 @@ what we assumed they mean, the questions open with staff, and the acceptance cri
 | this README | How do I run it, what does the API do, why is it built this way |
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | What exactly did we commit to for Levels 1-2, under which assumptions, and how do we know it works |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Module-by-module tour, the provider interface, how to add a provider |
+| [`TESTING.md`](TESTING.md) | What the tests establish, the cases we chose and why, how to run them, known gaps |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | The engineering decision behind the provider setup: alternatives, evidence, tradeoffs, when to revisit |
+| [`docs/COST.md`](docs/COST.md) | The cost of `GET /events`: local work, provider calls, what Google does that we cannot see |
+| [`docs/FINAL_RELEASE_CHECKLIST.md`](docs/FINAL_RELEASE_CHECKLIST.md) | What the October 21 final release still needs, with owners and draft release notes |
 | [`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md) | Things only a human can do: Google Cloud project, service account key, sharing the test calendar, GitHub secrets, access/permissions |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Running it somewhere other than a laptop (Docker, Cloud Run), configuration and rollback |
 | [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) | Prioritised backlog after Milestone 1 (Levels 3+, extensions, process) |
