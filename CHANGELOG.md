@@ -19,6 +19,8 @@ Release notes on GitHub are built from the matching section here.
   Cursors are re-encoded by the API, so cursors issued by earlier versions are invalid.
 
 ### Added
+- `TUTORIAL.md`: the demo against Google Calendar, expected vs actual per step, starting with
+  listing (paging with `limit=1` and a cursor refused for another window).
 - Get Event HTTP contract tests shared by the in-memory and Google adapters (fake SDK),
   including injection, app isolation, UTC output, optional fields and failure translation.
 - Explicit Get Event read guarantees in the provider port, README and OpenAPI, including
