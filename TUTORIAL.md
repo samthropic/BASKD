@@ -1,13 +1,81 @@
 # BASK'D demo: the workflow against Google Calendar
 
 Each section is one operation, run by its owner against the real Google Calendar through
-`curl`, with screenshots of the real terminal. Every step says what we expected, then shows
-what actually came back.
+`curl` or the interactive docs at `/docs`, with screenshots of what actually came back.
+Every step says what we expected, then shows what actually came back.
 
 Setup for every section: configure `.env` as in [`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md),
 then `make run` in one terminal (the service listens on `http://127.0.0.1:8000`) and run the
 commands in a second one. `curl -s http://127.0.0.1:8000/health` should report
 `"provider":"google"`.
+
+## Create an event: `POST /events`
+
+Owner: Sam Fiallos. I ran this against our real Google calendar through the interactive docs
+at `http://127.0.0.1:8000/docs` on 21 Oct 2026, on macOS. The `201` body includes a Google
+`web_link`, and both responses carry `X-Request-ID`.
+
+**What this shows:** creating one timed event returns `201`, a `Location` header for
+`GET /events/{id}`, and the event Google stored. Sending a number for `start` (`0`) is
+refused with `422 validation_error`, and Google is not called.
+
+### 1. Create one timed event
+
+**Expected:** `201`, a `Location` header pointing at the new `GET /events/{id}` resource,
+and a body whose `id` Google assigned. `start` and `end` come back as the UTC timestamps
+we sent, `all_day` is `false`, description and location are echoed, and `web_link` is set.
+
+```bash
+API=http://127.0.0.1:8000
+curl -s -i $API/events -H 'Content-Type: application/json' \
+  -d '{"title":"BASKD Sprint Planning Meeting","start":"2026-10-20T14:00:00Z","end":"2026-10-20T15:00:00Z","description":"Team meeting to review sprint progress, assign tasks, and discuss upcoming milestones.","location":"NYU Tandon School of Engineering"}'
+```
+
+The same body in the docs UI, before Execute:
+
+![Create form filled with the sprint-planning event](docs/demo/create-1-request.png)
+
+![201 Created: Location header, provider id, UTC times and a Google web_link](docs/demo/create-2-created.jpg)
+
+**Actual:** as expected. Google assigned `t2pp3k8vbgmrbfg221b7413h20`. `Location` is
+`http://127.0.0.1:8000/events/t2pp3k8vbgmrbfg221b7413h20`. Times came back unchanged and in
+UTC, `all_day` is `false`, and `web_link` opens the event in Google Calendar.
+`X-Request-ID: 222715c60f41406cbe0529533d694719`.
+
+### 2. Failure: a numeric timestamp
+
+**Expected:** `422` with `{"error": {"code": "validation_error", ...}}`. `start` must be an
+ISO 8601 string with an offset; a number is not guessed as Unix time. Validation runs
+before the provider is called, so Google never sees this body. `details` names
+`body.start` and does not echo the bad value.
+
+```bash
+curl -s -i $API/events -H 'Content-Type: application/json' \
+  -d '{"title":"BASKD Sprint Planning Meeting","start":0,"end":"2026-10-20T15:00:00Z","description":"Team meeting to review sprint progress, assign tasks, and discuss upcoming milestones.","location":"NYU Tandon School of Engineering"}'
+```
+
+![Request body with start set to 0, about to Execute](docs/demo/create-3-numeric-start.png)
+
+![422 validation_error: start must be an ISO 8601 timestamp](docs/demo/create-4-validation-error.jpg)
+
+**Actual:** as expected. `details[0].loc` is `["body", "start"]` and the message is
+"Value error, must be an ISO 8601 timestamp with a UTC offset, e.g. 2026-10-07T15:00:00Z".
+`X-Request-ID: f63aa24d907e4a5f87c39083e2809ab2`.
+
+### Cleanup
+
+The invalid body created nothing. Delete the event from step 1.
+
+**Expected:** `204 No Content`, no body, and an `X-Request-ID` header.
+
+```bash
+curl -s -i -X DELETE "$API/events/t2pp3k8vbgmrbfg221b7413h20"
+```
+
+![Delete in the docs UI: 204 for the created event](docs/demo/create-5-cleanup.png)
+
+**Actual:** as expected. `204` for `t2pp3k8vbgmrbfg221b7413h20`, empty body.
+`X-Request-ID: 35c3f40b0d754e190d01c1fa90809aef`.
 
 ## List events: `GET /events`
 
