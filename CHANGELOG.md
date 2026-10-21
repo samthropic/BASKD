@@ -45,6 +45,9 @@ Release notes on GitHub are built from the matching section here.
 ### Added
 - `TUTORIAL.md`: the demo against Google Calendar, expected vs actual per step, starting with
   listing (paging with `limit=1` and a cursor refused for another window).
+- Boundary tests extending create (`POST /events`) and listing (`GET /events`): title,
+  description and location exactly at and one past their limits, `limit` 250 and 251, and
+  a window holding exactly `limit` events (one page, `next_cursor` null). No behaviour change.
 - Get Event HTTP contract tests shared by the in-memory and Google adapters (fake SDK),
   including injection, app isolation, UTC output, optional fields and failure translation.
 - Explicit Get Event read guarantees in the provider port, README and OpenAPI, including

@@ -128,6 +128,20 @@ class TestList:
         assert pages == 2
         assert seen == ["Event +0m", "Event +30m", "Event +60m"]
 
+    def test_window_holding_exactly_limit_events_is_one_page_without_cursor(
+        self, provider: InMemoryCalendarProvider
+    ) -> None:
+        """n = L: a cursor here would send the client to a spurious empty last page.
+
+        The calendar holds a third event outside the window, so the provider must count
+        the events that match, not every stored event.
+        """
+        page = provider.list_events(
+            ListEventsQuery(time_min=T0, time_max=T0 + timedelta(minutes=60), limit=2)
+        )
+        assert [event.title for event in page.items] == ["Event +0m", "Event +30m"]
+        assert page.next_cursor is None
+
     def test_empty_calendar(self, memory_provider: InMemoryCalendarProvider) -> None:
         page = memory_provider.list_events(ListEventsQuery())
         assert page.items == []

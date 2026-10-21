@@ -14,7 +14,7 @@ from baskd.models import (
     EventInput,
     ListEventsQuery,
 )
-from tests.conftest import T0
+from tests.conftest import T0, TEXT_LIMITS
 
 
 class TestEventInput:
@@ -80,9 +80,27 @@ class TestEventInput:
         assert event.start == T0  # same instant
         assert event.start.utcoffset() == timedelta(hours=-4)  # input shape untouched
 
-    def test_title_length_limit(self) -> None:
-        with pytest.raises(ValidationError):
-            EventInput(title="x" * 1025, start=T0, end=T0 + timedelta(hours=1))
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_exactly_at_its_length_limit_is_accepted(self, field: str, limit: int) -> None:
+        event = EventInput.model_validate(
+            {"title": "x", "start": T0, "end": T0 + timedelta(hours=1), field: "x" * limit}
+        )
+        assert getattr(event, field) == "x" * limit
+
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_one_past_its_length_limit_is_rejected(self, field: str, limit: int) -> None:
+        with pytest.raises(ValidationError) as info:
+            EventInput.model_validate(
+                {
+                    "title": "x",
+                    "start": T0,
+                    "end": T0 + timedelta(hours=1),
+                    field: "x" * (limit + 1),
+                }
+            )
+        assert [(error["loc"], error["type"]) for error in info.value.errors()] == [
+            ((field,), "string_too_long")
+        ]
 
 
 class TestEvent:
@@ -152,6 +170,10 @@ class TestListEventsQuery:
     def test_rejects_out_of_range_limit(self, limit: int) -> None:
         with pytest.raises(ValidationError):
             ListEventsQuery(limit=limit)
+
+    @pytest.mark.parametrize("limit", [1, 250])
+    def test_accepts_limit_exactly_at_either_end_of_its_range(self, limit: int) -> None:
+        assert ListEventsQuery(limit=limit).limit == limit
 
     def test_rejects_empty_cursor(self) -> None:
         with pytest.raises(ValidationError):

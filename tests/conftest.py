@@ -17,6 +17,10 @@ from baskd.settings import Settings
 
 T0 = datetime(2026, 10, 7, 15, 0, tzinfo=UTC)
 
+#: The README's text limits as (field, maximum length), written out rather than imported
+#: from ``models.py`` so a limit that changes without the README fails the boundary tests.
+TEXT_LIMITS = [("title", 1024), ("description", 8192), ("location", 1024)]
+
 
 @pytest.fixture
 def memory_settings() -> Settings:
