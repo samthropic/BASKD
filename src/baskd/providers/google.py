@@ -12,7 +12,8 @@ Provider facts that shape this module (each is reflected in the public API or do
   rather than a 404, and ``events.delete`` on an already-deleted event returns 410 Gone.
   Both are reported as :class:`~baskd.errors.EventNotFound`.
 * All-day events carry a ``date`` instead of a ``dateTime``; they are reported with
-  ``all_day=true`` and midnight-UTC bounds but cannot be created through this API.
+  ``all_day=true`` and midnight-UTC bounds but cannot be created or replaced through this
+  API. Neither can a recurring *series*; single occurrences can be replaced.
 * A service account cannot invite attendees without domain-wide delegation, so the API
   does not expose attendees at all.
 * ``googleapiclient``'s HTTP transport is not thread-safe, so every call gets its own
@@ -36,6 +37,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from baskd.errors import (
+    ALL_DAY_NOT_REPLACEABLE,
+    SERIES_NOT_REPLACEABLE,
     CalendarError,
     EventNotFound,
     InvalidRequest,
@@ -150,6 +153,7 @@ class GoogleCalendarProvider:
         # Fetch-modify-update is Google's documented way to edit an event: sending the
         # whole resource back preserves fields this API does not manage (reminders, ...).
         current = self._fetch_live(event_id)
+        ensure_replaceable(current)
         request = self._events().update(
             calendarId=self._calendar_id, eventId=event_id, body=merge_into_resource(current, data)
         )
@@ -178,16 +182,25 @@ class GoogleCalendarProvider:
             result = request.execute(http=http, num_retries=0)
         except HttpError as exc:
             error = translate_http_error(exc, event_id=event_id)
-            logger.warning(
-                "Google Calendar call failed: http_status=%s -> %s", _status_of(exc), error.code
+            status = _status_of(exc)
+            # A missing event is an ordinary outcome; everything else deserves attention.
+            logger.log(
+                logging.INFO if status in _GONE_STATUSES else logging.WARNING,
+                "Google Calendar call failed: http_status=%s reasons=%s -> %s",
+                status,
+                sorted(_error_reasons(exc)),
+                error.code,
             )
             raise error from exc
         except RefreshError as exc:
-            logger.error("Google rejected the service-account credentials: %s", exc)
-            raise ProviderAuthError("Google rejected the service-account credentials") from exc
+            # The exception text can quote the token endpoint's response; log only its type.
+            logger.error("Google rejected the service-account credentials (%s)", type(exc).__name__)
+            raise ProviderAuthError(
+                "The calendar provider rejected the service's credentials"
+            ) from exc
         except (TransportError, httplib2.HttpLib2Error, OSError) as exc:
             logger.warning("Google Calendar unreachable: %s", type(exc).__name__)
-            raise ProviderUnavailable("Google Calendar could not be reached") from exc
+            raise ProviderUnavailable("The calendar provider could not be reached") from exc
         return result if isinstance(result, dict) else {}
 
 
@@ -198,25 +211,26 @@ def translate_http_error(exc: HttpError, *, event_id: str | None = None) -> Cale
     """Map an SDK ``HttpError`` to the provider-neutral error hierarchy.
 
     ``event_id`` tells us whether a 404 refers to an event (-> not found) or to the
-    calendar itself (-> misconfiguration / permissions).
+    calendar itself (-> misconfiguration / permissions). Messages are our own: Google's
+    error text is not copied into the public contract, and the provider's status and
+    ``reason`` codes are only logged (by ``_execute``).
     """
     status = _status_of(exc)
-    reasons, message = _error_details(exc)
     if status in _GONE_STATUSES:
         if event_id is not None:
             return EventNotFound(event_id)
         return ProviderAuthError("Calendar not found or not shared with the service account")
     if status == 400:
-        return InvalidRequest(f"Google Calendar rejected the request: {message}")
+        return InvalidRequest("The calendar provider rejected the request as invalid")
     if status == 401:
-        return ProviderAuthError("Google Calendar rejected our credentials")
+        return ProviderAuthError("The calendar provider rejected the service's credentials")
     if status == 403:
-        if reasons & _QUOTA_REASONS:
-            return ProviderUnavailable("Google Calendar quota exceeded; retry later")
-        return ProviderAuthError(f"Google Calendar denied access: {message}")
+        if _error_reasons(exc) & _QUOTA_REASONS:
+            return ProviderUnavailable("The calendar provider's quota is exhausted; retry later")
+        return ProviderAuthError("The calendar provider denied access to the calendar")
     if status in _TRANSIENT_STATUSES:
-        return ProviderUnavailable(f"Google Calendar is temporarily unavailable (HTTP {status})")
-    return ProviderError(f"Unexpected response from Google Calendar (HTTP {status}): {message}")
+        return ProviderUnavailable("The calendar provider is temporarily unavailable")
+    return ProviderError("The calendar provider returned an unexpected response")
 
 
 def event_from_google(resource: Mapping[str, Any]) -> Event:
@@ -249,6 +263,22 @@ def to_google_body(data: EventInput) -> dict[str, Any]:
     return body
 
 
+def ensure_replaceable(resource: Mapping[str, Any]) -> None:
+    """Refuse a replacement this API cannot express faithfully, before calling ``update``.
+
+    * All-day events: :class:`EventInput` only carries instants, so Google would silently
+      turn the event into a timed one.
+    * Recurring series: Google requires a ``timeZone`` on the bounds of a series, which
+      :class:`EventInput` does not carry, so Google would reject the update with a
+      confusing "Missing time zone definition". A single occurrence (the ids that
+      ``list_events`` returns) is an ordinary event and can be replaced.
+    """
+    if "date" in (resource.get("start") or {}):
+        raise InvalidRequest(ALL_DAY_NOT_REPLACEABLE)
+    if resource.get("recurrence"):
+        raise InvalidRequest(SERIES_NOT_REPLACEABLE)
+
+
 def merge_into_resource(resource: Mapping[str, Any], data: EventInput) -> dict[str, Any]:
     """Overlay the client-editable fields onto a fetched resource for ``events.update``.
 
@@ -277,15 +307,22 @@ def _parse_edge(edge: Mapping[str, Any]) -> tuple[datetime, bool]:
     if "date" in edge:
         day = date.fromisoformat(edge["date"])
         return datetime.combine(day, time.min, tzinfo=UTC), True
-    raise ProviderError("Google returned an event without a start or end time")
+    raise ProviderError("The calendar provider returned an event without a start or end time")
 
 
 def _zone(name: str | None) -> tzinfo:
+    """Resolve Google's IANA ``timeZone`` name for a naive ``dateTime``.
+
+    Zone data comes from the OS or, where the OS has none (Windows), from the ``tzdata``
+    package we depend on, so a valid name always resolves. An unknown name falls back to
+    UTC with a warning rather than failing the whole request.
+    """
     if not name:
         return UTC
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError:
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("Unknown time zone %r on a Google event; reading it as UTC", name)
         return UTC
 
 
@@ -296,19 +333,21 @@ def _status_of(exc: HttpError) -> int:
         return 0
 
 
-def _error_details(exc: HttpError) -> tuple[set[str], str]:
-    """Extract Google's ``reason`` codes and human message from an error body."""
+def _error_reasons(exc: HttpError) -> set[str]:
+    """Extract Google's machine-readable ``reason`` codes from an error body.
+
+    Google's human-readable ``message`` is deliberately ignored: it can echo request data,
+    so it goes neither into responses nor into logs.
+    """
     reasons: set[str] = set()
-    message = ""
     try:
         raw = exc.content.decode("utf-8") if isinstance(exc.content, bytes) else exc.content
         payload = json.loads(raw)
         error = payload.get("error") if isinstance(payload, dict) else None
         if isinstance(error, dict):
-            message = str(error.get("message") or "")
             for item in error.get("errors") or []:
                 if isinstance(item, dict) and item.get("reason"):
                     reasons.add(str(item["reason"]))
     except (AttributeError, TypeError, ValueError):
         pass
-    return reasons, message or f"HTTP {_status_of(exc)}"
+    return reasons

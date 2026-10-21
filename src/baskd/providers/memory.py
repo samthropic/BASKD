@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from uuid import uuid4
 
-from baskd.errors import EventNotFound, InvalidRequest
+from baskd.errors import ALL_DAY_NOT_REPLACEABLE, EventNotFound, InvalidRequest
 from baskd.models import Event, EventInput, EventPage, ListEventsQuery
 
 
@@ -54,6 +54,8 @@ class InMemoryCalendarProvider:
             existing = self._events.get(event_id)
             if existing is None:
                 raise EventNotFound(event_id)
+            if existing.all_day:
+                raise InvalidRequest(ALL_DAY_NOT_REPLACEABLE)
             updated = Event(id=existing.id, web_link=existing.web_link, **data.model_dump())
             self._events[event_id] = updated
         return updated

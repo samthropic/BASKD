@@ -7,6 +7,13 @@ on the first try. When this document and reality disagree, fix the document in t
 
 ## 1. Selecting work
 
+For the October 21 final release, read
+[`docs/FINAL_RELEASE_CHECKLIST.md`](docs/FINAL_RELEASE_CHECKLIST.md) for what is still
+required, current evidence and proposed task owners (the October 14 list is in
+[`docs/REVIEW_RELEASE_CHECKLIST.md`](docs/REVIEW_RELEASE_CHECKLIST.md)). Owners must
+acknowledge or swap those tasks; the checklist does not override the review and release
+rules below.
+
 - **Everything is a GitHub Issue first.** Bugs use `.github/ISSUE_TEMPLATE/bug_report.md`,
   features use `feature_report.md`. An issue is ready to pick up when it has an owner, a
   rough size (S ≤ 2h, M ≤ 1 day, L = split it), a reviewer, and lists the issues it depends on.
@@ -99,9 +106,12 @@ coordinator than the review release):
    `release.yml` creates a **draft** GitHub Release with auto-generated notes.
 4. A **different teammate** does a fresh checkout of the tag (`git clone`, `git checkout
    v0.1.0-rc.1`), follows the README, runs `make check` and the demo, and posts the result
-   (link to their terminal output or CI run) on the release draft.
+   (link to their terminal output or CI run) on the release draft. They state their OS and,
+   when anyone on the team has one, use an OS that CI does not cover (CI runs Linux).
 5. The coordinator replaces the auto-generated notes with the CHANGELOG section plus links to
    the CI run and the verification above, marks prereleases as such, and publishes.
+   **Not before step 4's result is linked on the draft**: a release that cannot be verified
+   stays a draft, even if that means missing the date (see `docs/TEAM_AGREEMENT.md` §7).
 6. Announce in the team channel; move the issues to Released.
 
 **Defective release:** publish a GitHub issue titled `Release vX.Y.Z: <problem>` within the
@@ -144,7 +154,7 @@ imports `api/` except `app.py`. Validation happens once, in `models.py`; errors 
 | Change a validation rule (limits, time rules) | `models.py` only | README "Rules every client can rely on" | `test_models.py`, one case in `test_api_events.py::TestCreate::test_invalid_input_is_422_with_details` |
 | Add an endpoint or provider operation (e.g. `PATCH`, free/busy) | `ports.py` (method + contract in the docstring) → `providers/memory.py` → `providers/google.py` → `api/events.py` (handler + `responses=documented_errors(...)`) | README API table; `docs/REQUIREMENTS.md` §1 row; `CHANGELOG.md` | all three layers + `tests/integration/test_google_calendar.py` |
 | Change listing semantics (window, ordering, page size) | `models.py::ListEventsQuery` (docstring is the spec) → `providers/memory.py::_overlaps` / `list_events` → `providers/google.py::list_events` params | README rules | `test_memory_provider.py::TestList`, `test_google_provider.py::TestProviderCalls::test_list_*`, integration pagination test |
-| Change an HTTP status, error code or message shape | `errors.py` (`code`) and/or `api/errors.py` (`STATUS_BY_ERROR`, envelope models) | README error list; `docs/ARCHITECTURE.md` §5 | `tests/unit/test_api_errors.py` |
+| Change an HTTP status, error code or message shape | `errors.py` (`code`, `category`, `retryable`) and/or `api/errors.py` (`STATUS_BY_ERROR`, envelope models, handlers call `log_failure`) | README error table; `docs/ARCHITECTURE.md` §5 | `tests/unit/test_api_errors.py`, `tests/unit/test_failure_logging.py` |
 | Handle a new Google failure mode | `providers/google.py::translate_http_error` / `_execute` | `docs/REQUIREMENTS.md` §3 (provider facts) | `test_google_provider.py::TestTranslateHttpError` |
 | Add a configuration setting | `settings.py` (+ fail-fast validation) → `.env.example` | README configuration table; `Dockerfile`/`ci.yml` if it is a secret | `tests/unit/test_settings_and_app.py` |
 | Add a provider (e.g. Microsoft Graph) | `providers/<name>.py` (five methods + `name`) → `settings.py` → `providers/__init__.py::build_provider` | `docs/REQUIREMENTS.md` §3; README | fake-SDK unit tests (copy the pattern in `test_google_provider.py`) + self-skipping `tests/integration/test_<name>.py` |

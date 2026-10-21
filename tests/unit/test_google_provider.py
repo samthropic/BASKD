@@ -8,6 +8,9 @@ covered by ``tests/integration``.
 from __future__ import annotations
 
 import json
+import logging
+import zoneinfo
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -145,6 +148,16 @@ def provider(events: FakeEvents) -> GoogleCalendarProvider:
 # -- pure mapping -----------------------------------------------------------------------------
 
 
+@pytest.fixture
+def no_system_tz_database() -> Iterator[None]:
+    """Hide the OS time-zone database, as on Windows, so only ``tzdata`` can resolve zones."""
+    zoneinfo.reset_tzpath(to=())
+    zoneinfo.ZoneInfo.clear_cache()
+    yield
+    zoneinfo.reset_tzpath()
+    zoneinfo.ZoneInfo.clear_cache()
+
+
 class TestEventFromGoogle:
     def test_maps_timed_event_to_utc(self) -> None:
         event = event_from_google(GOOGLE_EVENT)
@@ -181,11 +194,37 @@ class TestEventFromGoogle:
         resource = {
             "id": "z1",
             "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "America/New_York"},
-            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "Nowhere/Invalid"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "America/New_York"},
         }
         event = event_from_google(resource)
         assert event.start == T0  # 11:00 New York == 15:00 UTC in October
-        assert event.end == datetime(2026, 10, 7, 12, 0, tzinfo=UTC)  # unknown zone -> UTC
+
+    @pytest.mark.usefixtures("no_system_tz_database")
+    def test_declared_zone_resolves_without_a_system_tz_database(self) -> None:
+        """Windows has no IANA database; the declared ``tzdata`` dependency must supply it.
+
+        Regression test for the Team 6 review: without ``tzdata`` this zone silently
+        resolved to UTC, so 11:00 New York came back as 11:00 UTC instead of 15:00 UTC.
+        """
+        resource = {
+            "id": "z2",
+            "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "America/New_York"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "America/New_York"},
+        }
+        assert event_from_google(resource).start == T0
+
+    def test_unknown_declared_zone_is_read_as_utc_with_a_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        resource = {
+            "id": "z3",
+            "start": {"dateTime": "2026-10-07T11:00:00", "timeZone": "Nowhere/Invalid"},
+            "end": {"dateTime": "2026-10-07T12:00:00", "timeZone": "Nowhere/Invalid"},
+        }
+        with caplog.at_level(logging.WARNING, logger="baskd.providers.google"):
+            event = event_from_google(resource)
+        assert event.start == datetime(2026, 10, 7, 11, 0, tzinfo=UTC)
+        assert "Nowhere/Invalid" in caplog.text
 
     def test_missing_times_is_a_provider_error(self) -> None:
         with pytest.raises(ProviderError):
@@ -234,12 +273,12 @@ class TestTranslateHttpError:
         assert isinstance(error, ProviderAuthError)
         assert "Calendar" in error.message
 
-    def test_400_is_invalid_request_with_google_message(self) -> None:
+    def test_400_is_invalid_request_without_google_text(self) -> None:
         error = translate_http_error(
             http_error(400, "invalid", "The specified time range is empty.")
         )
         assert isinstance(error, InvalidRequest)
-        assert "time range is empty" in error.message
+        assert "time range" not in error.message  # provider text stays out of the contract
 
     def test_401_and_403_are_auth_errors(self) -> None:
         assert isinstance(translate_http_error(http_error(401)), ProviderAuthError)
@@ -254,15 +293,25 @@ class TestTranslateHttpError:
         assert isinstance(translate_http_error(http_error(status)), ProviderUnavailable)
 
     def test_anything_else_is_provider_error(self) -> None:
-        error = translate_http_error(http_error(409, "duplicate"))
-        assert isinstance(error, ProviderError)
-        assert "409" in error.message
+        assert isinstance(translate_http_error(http_error(409, "duplicate")), ProviderError)
 
     def test_unparseable_body_still_maps(self) -> None:
         raw = HttpError(resp=httplib2.Response({"status": 500}), content=b"<html>oops</html>")
-        error = translate_http_error(raw)
-        assert isinstance(error, ProviderUnavailable)
-        assert "HTTP 500" in error.message
+        assert isinstance(translate_http_error(raw), ProviderUnavailable)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            http_error(400, "invalid", "secret detail"),
+            http_error(403, "forbidden", "secret detail"),
+            http_error(409, "duplicate", "secret detail"),
+            http_error(503, "backendError", "secret detail"),
+        ],
+    )
+    def test_public_messages_are_provider_neutral(self, error: HttpError) -> None:
+        message = translate_http_error(error, event_id="e1").message
+        assert "secret" not in message
+        assert "Google" not in message
 
 
 # -- provider behaviour with the fake SDK -----------------------------------------------------
@@ -338,6 +387,20 @@ class TestProviderCalls:
         assert [event.id for event in page.items] == ["abc123def456"]
         assert page.next_cursor == "token-2"
 
+    def test_list_sends_bounds_in_whole_seconds(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        """Same instant the in-memory provider filters on, so both agree at the boundary."""
+        events.enqueue("list", {"items": []})
+        provider.list_events(
+            ListEventsQuery.model_validate(
+                {"from": "2026-10-07T14:00:00.999Z", "to": "2026-10-07T15:00:00.500Z"}
+            )
+        )
+        _, kwargs = events.calls[0]
+        assert kwargs["timeMin"] == "2026-10-07T14:00:00Z"
+        assert kwargs["timeMax"] == "2026-10-07T15:00:00Z"
+
     def test_list_without_window_omits_bounds(
         self, provider: GoogleCalendarProvider, events: FakeEvents
     ) -> None:
@@ -375,6 +438,54 @@ class TestProviderCalls:
             provider.replace_event("abc123def456", event_input())
         assert [method for method, _ in events.calls] == ["get"]
 
+    def test_replace_404_on_update_is_not_found(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        # Deleted between our fetch and our update.
+        events.enqueue("get", GOOGLE_EVENT)
+        events.enqueue("update", http_error(404))
+        with pytest.raises(EventNotFound):
+            provider.replace_event("abc123def456", event_input())
+
+    @pytest.mark.parametrize(
+        ("resource", "message"),
+        [
+            (
+                {**GOOGLE_EVENT, "start": {"date": "2026-11-26"}, "end": {"date": "2026-11-27"}},
+                "All-day",
+            ),
+            ({**GOOGLE_EVENT, "recurrence": ["RRULE:FREQ=DAILY;COUNT=3"]}, "Recurring"),
+        ],
+        ids=["all-day", "recurring-series"],
+    )
+    def test_replace_unrepresentable_event_is_refused_without_updating(
+        self,
+        provider: GoogleCalendarProvider,
+        events: FakeEvents,
+        resource: dict[str, Any],
+        message: str,
+    ) -> None:
+        events.enqueue("get", resource)
+        with pytest.raises(InvalidRequest, match=message):
+            provider.replace_event("abc123def456", event_input())
+        assert [method for method, _ in events.calls] == ["get"]
+
+    def test_replace_single_occurrence_of_recurring_event_is_allowed(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        occurrence = {
+            **GOOGLE_EVENT,
+            "id": "series_20261007T150000Z",
+            "recurringEventId": "series",
+            "originalStartTime": GOOGLE_EVENT["start"],
+        }
+        events.enqueue("get", occurrence)
+        events.enqueue("update", {**occurrence, "summary": "Moved"})
+        replaced = provider.replace_event("series_20261007T150000Z", event_input(title="Moved"))
+        assert [method for method, _ in events.calls] == ["get", "update"]
+        assert events.calls[1][1]["body"]["recurringEventId"] == "series"
+        assert replaced.id == "series_20261007T150000Z"
+
     def test_delete_success_and_already_deleted(
         self, provider: GoogleCalendarProvider, events: FakeEvents
     ) -> None:
@@ -382,6 +493,22 @@ class TestProviderCalls:
         provider.delete_event("abc123def456")
         with pytest.raises(EventNotFound):
             provider.delete_event("abc123def456")
+
+    def test_failed_call_logs_status_and_reasons_but_not_googles_message(
+        self,
+        provider: GoogleCalendarProvider,
+        events: FakeEvents,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        events.enqueue("get", http_error(403, "forbidden", "calendar of jane@example.com"))
+        with (
+            caplog.at_level(logging.INFO, logger="baskd.providers.google"),
+            pytest.raises(ProviderAuthError),
+        ):
+            provider.get_event("abc123def456")
+        assert "http_status=403" in caplog.text
+        assert "forbidden" in caplog.text
+        assert "jane@example.com" not in caplog.text
 
     def test_create_against_inaccessible_calendar_is_auth_error(
         self, provider: GoogleCalendarProvider, events: FakeEvents

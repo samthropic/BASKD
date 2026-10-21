@@ -14,6 +14,7 @@ Two deliberately separate shapes exist for an event:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from pydantic import (
@@ -29,6 +30,19 @@ TITLE_MAX_LENGTH = 1024
 TEXT_MAX_LENGTH = 8192
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 250
+
+_ISO_8601_DATE_TIME = re.compile(r"\d{4}-\d{2}-\d{2}[Tt ]")
+
+
+def _require_iso_timestamp(value: object) -> object:
+    """Reject anything but an ISO 8601 date-time string before pydantic converts it.
+
+    Pydantic's lax mode would otherwise read ``0`` or ``"1696000000"`` as Unix time, so a
+    client bug would silently create a 1970 event instead of getting a 422.
+    """
+    if isinstance(value, datetime) or (isinstance(value, str) and _ISO_8601_DATE_TIME.match(value)):
+        return value
+    raise ValueError("must be an ISO 8601 timestamp with a UTC offset, e.g. 2026-10-07T15:00:00Z")
 
 
 class EventInput(BaseModel):
@@ -46,6 +60,11 @@ class EventInput(BaseModel):
     end: AwareDatetime = Field(examples=["2026-10-07T15:30:00Z"])
     description: str | None = Field(default=None, max_length=TEXT_MAX_LENGTH)
     location: str | None = Field(default=None, max_length=TITLE_MAX_LENGTH)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _iso_8601_only(cls, value: object) -> object:
+        return _require_iso_timestamp(value)
 
     @field_validator("start", "end")
     @classmethod
@@ -93,6 +112,9 @@ class ListEventsQuery(BaseModel):
     An event is included when it *overlaps* the half-open window ``[from, to)``, i.e.
     ``event.end > from`` and ``event.start < to``. Either bound may be omitted. Results are
     ordered by start time and paginated with an opaque ``cursor``.
+
+    Bounds are truncated to whole seconds, as event times are: Google ignores fractional
+    seconds in ``timeMin``/``timeMax``, so every provider must see the same instant.
     """
 
     model_config = ConfigDict(extra="forbid", validate_by_name=True, validate_by_alias=True)
@@ -120,6 +142,16 @@ class ListEventsQuery(BaseModel):
         min_length=1,
         description="Opaque token from a previous page's `next_cursor`.",
     )
+
+    @field_validator("time_min", "time_max", mode="before")
+    @classmethod
+    def _iso_8601_only(cls, value: object) -> object:
+        return None if value is None else _require_iso_timestamp(value)
+
+    @field_validator("time_min", "time_max")
+    @classmethod
+    def _whole_seconds_only(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else value.replace(microsecond=0)
 
     @model_validator(mode="after")
     def _window_must_be_ordered(self) -> ListEventsQuery:

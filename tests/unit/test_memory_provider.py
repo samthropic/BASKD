@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 
 from baskd.errors import EventNotFound, InvalidRequest
-from baskd.models import ListEventsQuery
+from baskd.models import Event, ListEventsQuery
 from baskd.ports import CalendarProvider
 from baskd.providers.memory import InMemoryCalendarProvider
 from tests.conftest import T0, event_input
@@ -47,6 +47,15 @@ class TestReplace:
         assert replaced.description is None
         assert replaced.location is None
         assert memory_provider.get_event(created.id) == replaced
+
+    def test_replace_all_day_event_is_refused_and_unchanged(self) -> None:
+        all_day = Event(
+            id="holiday", title="Holiday", start=T0, end=T0 + timedelta(days=1), all_day=True
+        )
+        provider = InMemoryCalendarProvider([all_day])
+        with pytest.raises(InvalidRequest, match="All-day"):
+            provider.replace_event("holiday", event_input())
+        assert provider.get_event("holiday") == all_day
 
     def test_replace_unknown_raises(self, memory_provider: InMemoryCalendarProvider) -> None:
         with pytest.raises(EventNotFound):
@@ -118,6 +127,20 @@ class TestList:
                 break
         assert pages == 2
         assert seen == ["Event +0m", "Event +30m", "Event +60m"]
+
+    def test_window_holding_exactly_limit_events_is_one_page_without_cursor(
+        self, provider: InMemoryCalendarProvider
+    ) -> None:
+        """n = L: a cursor here would send the client to a spurious empty last page.
+
+        The calendar holds a third event outside the window, so the provider must count
+        the events that match, not every stored event.
+        """
+        page = provider.list_events(
+            ListEventsQuery(time_min=T0, time_max=T0 + timedelta(minutes=60), limit=2)
+        )
+        assert [event.title for event in page.items] == ["Event +0m", "Event +30m"]
+        assert page.next_cursor is None
 
     def test_empty_calendar(self, memory_provider: InMemoryCalendarProvider) -> None:
         page = memory_provider.list_events(ListEventsQuery())

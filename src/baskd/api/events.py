@@ -12,6 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, Response, status
 
+from baskd.api.cursors import unwrap_cursor, wrap_cursor
 from baskd.api.dependencies import Provider
 from baskd.api.errors import documented_errors
 from baskd.models import Event, EventInput, EventPage, ListEventsQuery
@@ -34,11 +35,28 @@ PROVIDER_FAILURES = (
     status_code=status.HTTP_201_CREATED,
     response_model=Event,
     summary="Create an event",
-    responses=documented_errors(
-        status.HTTP_400_BAD_REQUEST,
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
-        *PROVIDER_FAILURES,
+    description=(
+        "Create one timed event on the calendar configured for this service. The provider "
+        "assigns the event id; response timestamps are UTC, and the `Location` header points "
+        "to the new event's `GET /events/{id}` resource. Repeating the request creates "
+        "another event."
     ),
+    responses={
+        status.HTTP_201_CREATED: {
+            "description": "Event created.",
+            "headers": {
+                "Location": {
+                    "description": "URL of the newly created event resource.",
+                    "schema": {"type": "string", "format": "uri"},
+                }
+            },
+        },
+        **documented_errors(
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            *PROVIDER_FAILURES,
+        ),
+    },
 )
 def create_event(
     data: EventInput, provider: Provider, request: Request, response: Response
@@ -52,6 +70,12 @@ def create_event(
     "",
     response_model=EventPage,
     summary="List events overlapping a time window",
+    description=(
+        "Events overlapping the half-open window `[from, to)`, ordered by start. Follow "
+        "`next_cursor` until it is `null`. A cursor is only valid with the same `from` and "
+        "`to` as the request that returned it (`limit` may change); any other window "
+        "returns `400 invalid_request`."
+    ),
     responses=documented_errors(
         status.HTTP_400_BAD_REQUEST,
         status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -59,14 +83,27 @@ def create_event(
     ),
 )
 def list_events(query: Annotated[ListEventsQuery, Query()], provider: Provider) -> EventPage:
-    return provider.list_events(query)
+    page = provider.list_events(
+        query.model_copy(update={"cursor": unwrap_cursor(query.cursor, query)})
+    )
+    return page.model_copy(update={"next_cursor": wrap_cursor(page.next_cursor, query)})
 
 
 @router.get(
     "/{event_id}",
     response_model=Event,
     summary="Get one event",
-    responses=documented_errors(status.HTTP_404_NOT_FOUND, *PROVIDER_FAILURES),
+    description=(
+        "Read one event by its opaque provider-assigned id without changing it. Returns "
+        "the provider-neutral Event model with UTC timestamps, including existing all-day "
+        "events and recurring occurrences. Missing, deleted or cancelled events return "
+        "404 event_not_found; ids longer than 1024 characters return 422 validation_error."
+    ),
+    responses=documented_errors(
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        *PROVIDER_FAILURES,
+    ),
 )
 def get_event(event_id: EventId, provider: Provider) -> Event:
     return provider.get_event(event_id)
@@ -78,7 +115,9 @@ def get_event(event_id: EventId, provider: Provider) -> Event:
     summary="Replace an event",
     description=(
         "Full replacement: every client-editable field is taken from the body. Omitted "
-        "optional fields (`description`, `location`) are cleared."
+        "optional fields (`description`, `location`) are cleared. The `id` never changes. "
+        "All-day events and recurring series cannot be replaced (`400 invalid_request`); "
+        "a single occurrence of a recurring event can."
     ),
     responses=documented_errors(
         status.HTTP_400_BAD_REQUEST,

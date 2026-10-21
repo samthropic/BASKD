@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from baskd import __version__
-from tests.conftest import event_payload
+from baskd.app import create_app
+from baskd.errors import ALL_DAY_NOT_REPLACEABLE
+from baskd.models import Event
+from baskd.providers.memory import InMemoryCalendarProvider
+from baskd.settings import Settings
+from tests.conftest import TEXT_LIMITS, event_input, event_payload
 
 
 def create(client: TestClient, **overrides: Any) -> dict[str, Any]:
@@ -35,7 +42,22 @@ class TestCreate:
         assert body["start"] == "2026-10-07T15:00:00Z"
         assert body["end"] == "2026-10-07T15:30:00Z"
         assert body["title"] == "Sprint planning"
+        assert body["description"] == "Bring the backlog"
+        assert body["location"] == "Room 101"
         assert body["all_day"] is False
+
+    def test_omitted_optional_fields_are_null(self, client: TestClient) -> None:
+        payload = event_payload()
+        payload.pop("description")
+        payload.pop("location")
+
+        response = client.post("/events", json=payload)
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["description"] is None
+        assert body["location"] is None
+        assert body["web_link"] is None
 
     def test_created_event_is_retrievable(self, client: TestClient) -> None:
         created = create(client)
@@ -43,15 +65,27 @@ class TestCreate:
         assert fetched.status_code == 200
         assert fetched.json() == created
 
+    def test_repeating_request_creates_distinct_events(self, client: TestClient) -> None:
+        payload = event_payload()
+
+        first = client.post("/events", json=payload)
+        second = client.post("/events", json=payload)
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert first.json()["id"] != second.json()["id"]
+
     @pytest.mark.parametrize(
         ("overrides", "field"),
         [
             ({"title": ""}, "title"),
+            ({"title": "   "}, "title"),
             ({"start": "2026-10-07T15:00:00"}, "start"),  # naive
             ({"end": "2026-10-07T15:00:00Z"}, None),  # end == start -> model-level error
             ({"end": "yesterday"}, "end"),
             ({"attendees": ["a@example.com"]}, "attendees"),
             ({"description": "x" * 8193}, "description"),
+            ({"location": "x" * 1025}, "location"),
         ],
     )
     def test_invalid_input_is_422_with_details(
@@ -66,6 +100,41 @@ class TestCreate:
             assert ["body"] in locations
         else:
             assert ["body", field] in locations
+
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_exactly_at_its_length_limit_is_201_and_stored_whole(
+        self, client: TestClient, field: str, limit: int
+    ) -> None:
+        created = create(client, **{field: "x" * limit})
+        assert created[field] == "x" * limit
+        assert client.get(f"/events/{created['id']}").json()[field] == "x" * limit
+
+    @pytest.mark.parametrize(("field", "limit"), TEXT_LIMITS)
+    def test_text_one_past_its_length_limit_is_422_and_nothing_is_created(
+        self, client: TestClient, field: str, limit: int
+    ) -> None:
+        too_long = "x" * (limit + 1)
+        response = client.post("/events", json=event_payload(**{field: too_long}))
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert set(error) == {"code", "message", "details"}
+        assert error["code"] == "validation_error"
+        assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
+            (["body", field], "string_too_long")
+        ]
+        assert too_long not in response.text  # the README promises input is never echoed
+        assert client.get("/events").json()["items"] == []
+
+    def test_numeric_timestamps_are_422_and_nothing_is_created(self, client: TestClient) -> None:
+        """Team 6 review repro: this used to return 201 and create a 1970 event."""
+        response = client.post(
+            "/events", json={"title": "numeric timestamps", "start": 0, "end": 3600}
+        )
+        assert response.status_code == 422
+        locations = [detail["loc"] for detail in response.json()["error"]["details"]]
+        assert ["body", "start"] in locations
+        assert ["body", "end"] in locations
+        assert client.get("/events").json()["items"] == []
 
     def test_missing_body_is_422(self, client: TestClient) -> None:
         response = client.post("/events")
@@ -107,6 +176,15 @@ class TestList:
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["items"]] == [earlier["id"], later["id"]]
 
+    def test_fractional_upper_bound_is_truncated_like_google(self, client: TestClient) -> None:
+        """Team 6 review: memory used to include a 15:00 event for ``to=15:00:00.500``."""
+        create(client)  # starts at 2026-10-07T15:00:00Z
+        response = client.get(
+            "/events", params={"from": "2026-10-07T00:00:00Z", "to": "2026-10-07T15:00:00.500Z"}
+        )
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+
     def test_pagination_round_trip(self, client: TestClient) -> None:
         ids = [
             create(
@@ -122,11 +200,42 @@ class TestList:
         assert [item["id"] for item in second["items"]] == ids[2:]
         assert second["next_cursor"] is None
 
+    def test_largest_limit_with_exactly_that_many_events_in_the_window_is_one_page(
+        self, client: TestClient, memory_provider: InMemoryCalendarProvider
+    ) -> None:
+        """n = L = 250, the largest page: every event once, and no cursor to an empty page."""
+        expected = [
+            memory_provider.create_event(event_input(offset_minutes=minute)).id
+            for minute in range(250)
+        ]
+        memory_provider.create_event(event_input(offset_minutes=24 * 60))  # next day, outside
+
+        response = client.get(
+            "/events",
+            params={"from": "2026-10-07T00:00:00Z", "to": "2026-10-08T00:00:00Z", "limit": 250},
+        )
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == expected
+        assert response.json()["next_cursor"] is None
+
+    def test_limit_one_past_its_maximum_is_422_naming_the_parameter(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/events", params={"limit": 251})
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "validation_error"
+        assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
+            (["query", "limit"], "less_than_equal")
+        ]
+
     @pytest.mark.parametrize(
         "params",
         [
             {"from": "2026-10-08T00:00:00Z", "to": "2026-10-07T00:00:00Z"},  # inverted
             {"from": "2026-10-07T00:00:00"},  # naive
+            {"from": "0"},  # Unix time is not an ISO 8601 timestamp
+            {"to": "1696000000"},
             {"limit": 0},
             {"limit": 251},
             {"limit": "many"},
@@ -139,10 +248,70 @@ class TestList:
         assert response.status_code == 422, response.text
         assert response.json()["error"]["code"] == "validation_error"
 
-    def test_malformed_cursor_is_400(self, client: TestClient) -> None:
-        response = client.get("/events", params={"cursor": "garbage"})
+    @pytest.mark.parametrize(
+        "cursor",
+        [
+            "garbage",
+            "!!!",
+            base64.urlsafe_b64encode(b"[1, 2]").decode(),  # valid JSON, wrong shape
+            base64.urlsafe_b64encode(b'{"c": 1, "w": [null, null]}').decode(),
+        ],
+    )
+    def test_malformed_cursor_is_400(self, client: TestClient, cursor: str) -> None:
+        response = client.get("/events", params={"cursor": cursor})
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid_request"
+
+    def test_traversal_returns_every_event_exactly_once(self, client: TestClient) -> None:
+        """Seven events, at most three per page: the combined pages are the whole window."""
+        expected = [
+            create(
+                client, start=f"2026-10-07T{hour:02d}:00:00Z", end=f"2026-10-07T{hour:02d}:30:00Z"
+            )["id"]
+            for hour in range(9, 16)
+        ]
+        params: dict[str, Any] = {"from": "2026-10-07T00:00:00Z", "limit": 3}
+        seen: list[str] = []
+        for _ in range(len(expected) + 1):  # bounded: a broken cursor must not loop forever
+            body = client.get("/events", params=params).json()
+            assert len(body["items"]) <= 3
+            seen.extend(item["id"] for item in body["items"])
+            if body["next_cursor"] is None:
+                break
+            params["cursor"] = body["next_cursor"]
+        assert seen == expected
+
+    def test_cursor_reused_with_another_window_is_400(self, client: TestClient) -> None:
+        """Team 6 review repro: this used to return 200 with the 12:00 event."""
+        for hour in (10, 11, 12):
+            create(client, start=f"2026-10-07T{hour}:00:00Z", end=f"2026-10-07T{hour}:30:00Z")
+        first = client.get("/events", params={"from": "2026-10-07T09:00:00Z", "limit": 1}).json()
+
+        response = client.get(
+            "/events",
+            params={"from": "2026-10-07T11:00:00Z", "limit": 1, "cursor": first["next_cursor"]},
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_request"
+
+    def test_cursor_allows_another_limit_and_another_spelling_of_the_window(
+        self, client: TestClient
+    ) -> None:
+        for hour in (10, 11, 12):
+            create(client, start=f"2026-10-07T{hour}:00:00Z", end=f"2026-10-07T{hour}:30:00Z")
+        first = client.get("/events", params={"from": "2026-10-07T09:00:00Z", "limit": 1}).json()
+
+        rest = client.get(
+            "/events",
+            params={
+                "from": "2026-10-07T05:00:00-04:00",
+                "limit": 5,
+                "cursor": first["next_cursor"],
+            },
+        )
+        assert rest.status_code == 200, rest.text
+        assert [item["title"] for item in rest.json()["items"]] == ["Sprint planning"] * 2
+        assert rest.json()["next_cursor"] is None
 
 
 class TestReplace:
@@ -161,13 +330,83 @@ class TestReplace:
         assert body["location"] is None
         assert client.get(f"/events/{created['id']}").json() == body
 
+    def test_sets_then_clears_optional_fields(self, client: TestClient) -> None:
+        created = create(client, description=None, location=None)
+        url = f"/events/{created['id']}"
+        filled = client.put(url, json=event_payload(description="Agenda", location="Lobby"))
+        assert filled.status_code == 200
+        assert (filled.json()["description"], filled.json()["location"]) == ("Agenda", "Lobby")
+        # Explicit null and an empty string clear a field just like omitting it.
+        cleared = client.put(url, json=event_payload(description=None, location=""))
+        assert cleared.status_code == 200
+        assert (cleared.json()["description"], cleared.json()["location"]) == (None, None)
+        assert client.get(url).json() == cleared.json()
+
+    def test_accepts_any_offset_and_returns_utc(self, client: TestClient) -> None:
+        created = create(client)
+        response = client.put(
+            f"/events/{created['id']}",
+            json=event_payload(start="2026-10-08T09:00:00-04:00", end="2026-10-08T09:30:00-04:00"),
+        )
+        assert response.status_code == 200
+        assert response.json()["start"] == "2026-10-08T13:00:00Z"
+        assert response.json()["end"] == "2026-10-08T13:30:00Z"
+
     def test_unknown_id_is_404(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload())
         assert response.status_code == 404
+        assert response.json()["error"]["code"] == "event_not_found"
 
     def test_invalid_body_is_422_even_for_unknown_id(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload(title=""))
         assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"title": "   "},  # blank after stripping
+            {"start": "2026-10-07T15:00:00"},  # naive
+            {"end": "2026-10-07T14:00:00Z"},  # end before start
+            {"end": "2026-10-07T15:00:00Z"},  # end == start
+            {"id": "someone-elses-id"},  # the id comes from the URL only
+            {"all_day": True},  # read-only field
+        ],
+    )
+    def test_invalid_body_is_422_and_event_is_unchanged(
+        self, client: TestClient, overrides: dict[str, Any]
+    ) -> None:
+        created = create(client)
+        response = client.put(f"/events/{created['id']}", json=event_payload(**overrides))
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "validation_error"
+        assert client.get(f"/events/{created['id']}").json() == created
+
+    def test_missing_required_field_is_422(self, client: TestClient) -> None:
+        created = create(client)
+        body = event_payload()
+        del body["end"]
+        response = client.put(f"/events/{created['id']}", json=body)
+        assert response.status_code == 422
+        assert ["body", "end"] in [detail["loc"] for detail in response.json()["error"]["details"]]
+
+    def test_all_day_event_is_400_and_unchanged(self) -> None:
+        all_day = Event(
+            id="holiday",
+            title="Holiday",
+            start=datetime(2026, 11, 26, tzinfo=UTC),
+            end=datetime(2026, 11, 27, tzinfo=UTC),
+            all_day=True,
+        )
+        provider = InMemoryCalendarProvider([all_day])
+        app = create_app(settings=Settings(provider="memory", _env_file=None), provider=provider)
+        with TestClient(app) as client:
+            response = client.put("/events/holiday", json=event_payload())
+            assert response.status_code == 400
+            assert response.json()["error"] == {
+                "code": "invalid_request",
+                "message": ALL_DAY_NOT_REPLACEABLE,
+            }
+            assert client.get("/events/holiday").json()["all_day"] is True
 
 
 class TestDelete:
@@ -196,6 +435,9 @@ def test_openapi_documents_error_envelope(client: TestClient) -> None:
     create_op = schema["paths"]["/events"]["post"]
     assert "422" in create_op["responses"]
     assert "503" in create_op["responses"]
+    assert "Repeating the request creates another event." in create_op["description"]
+    location_header = create_op["responses"]["201"]["headers"]["Location"]
+    assert location_header["schema"] == {"type": "string", "format": "uri"}
     assert "ErrorResponse" in schema["components"]["schemas"]
     list_params = {p["name"] for p in schema["paths"]["/events"]["get"]["parameters"]}
     assert {"from", "to", "limit", "cursor"} <= list_params

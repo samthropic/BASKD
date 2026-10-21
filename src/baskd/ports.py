@@ -40,7 +40,13 @@ class CalendarProvider(Protocol):
         ...
 
     def get_event(self, event_id: str) -> Event:
-        """Return one event or raise :class:`~baskd.errors.EventNotFound`."""
+        """Read one event by opaque id without modifying it.
+
+        Return the provider-neutral Event (UTC times, nullable optional fields), including
+        existing all-day events and recurring occurrences. Unknown, deleted or cancelled
+        ids raise :class:`~baskd.errors.EventNotFound`; provider failures use the domain
+        error hierarchy. No SDK resource or exception may escape this method.
+        """
         ...
 
     def list_events(self, query: ListEventsQuery) -> EventPage:
@@ -48,7 +54,11 @@ class CalendarProvider(Protocol):
         ...
 
     def replace_event(self, event_id: str, data: EventInput) -> Event:
-        """Replace every client-editable field of an existing event and return the result."""
+        """Replace every client-editable field of an existing event and return the result.
+
+        Raises :class:`~baskd.errors.InvalidRequest` for an all-day event or a recurring
+        series, which :class:`~baskd.models.EventInput` cannot represent, without changing it.
+        """
         ...
 
     def delete_event(self, event_id: str) -> None:
