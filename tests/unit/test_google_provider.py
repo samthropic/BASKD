@@ -273,12 +273,12 @@ class TestTranslateHttpError:
         assert isinstance(error, ProviderAuthError)
         assert "Calendar" in error.message
 
-    def test_400_is_invalid_request_with_google_message(self) -> None:
+    def test_400_is_invalid_request_without_google_text(self) -> None:
         error = translate_http_error(
             http_error(400, "invalid", "The specified time range is empty.")
         )
         assert isinstance(error, InvalidRequest)
-        assert "time range is empty" in error.message
+        assert "time range" not in error.message  # provider text stays out of the contract
 
     def test_401_and_403_are_auth_errors(self) -> None:
         assert isinstance(translate_http_error(http_error(401)), ProviderAuthError)
@@ -293,15 +293,25 @@ class TestTranslateHttpError:
         assert isinstance(translate_http_error(http_error(status)), ProviderUnavailable)
 
     def test_anything_else_is_provider_error(self) -> None:
-        error = translate_http_error(http_error(409, "duplicate"))
-        assert isinstance(error, ProviderError)
-        assert "409" in error.message
+        assert isinstance(translate_http_error(http_error(409, "duplicate")), ProviderError)
 
     def test_unparseable_body_still_maps(self) -> None:
         raw = HttpError(resp=httplib2.Response({"status": 500}), content=b"<html>oops</html>")
-        error = translate_http_error(raw)
-        assert isinstance(error, ProviderUnavailable)
-        assert "HTTP 500" in error.message
+        assert isinstance(translate_http_error(raw), ProviderUnavailable)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            http_error(400, "invalid", "secret detail"),
+            http_error(403, "forbidden", "secret detail"),
+            http_error(409, "duplicate", "secret detail"),
+            http_error(503, "backendError", "secret detail"),
+        ],
+    )
+    def test_public_messages_are_provider_neutral(self, error: HttpError) -> None:
+        message = translate_http_error(error, event_id="e1").message
+        assert "secret" not in message
+        assert "Google" not in message
 
 
 # -- provider behaviour with the fake SDK -----------------------------------------------------
@@ -483,6 +493,22 @@ class TestProviderCalls:
         provider.delete_event("abc123def456")
         with pytest.raises(EventNotFound):
             provider.delete_event("abc123def456")
+
+    def test_failed_call_logs_status_and_reasons_but_not_googles_message(
+        self,
+        provider: GoogleCalendarProvider,
+        events: FakeEvents,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        events.enqueue("get", http_error(403, "forbidden", "calendar of jane@example.com"))
+        with (
+            caplog.at_level(logging.INFO, logger="baskd.providers.google"),
+            pytest.raises(ProviderAuthError),
+        ):
+            provider.get_event("abc123def456")
+        assert "http_status=403" in caplog.text
+        assert "forbidden" in caplog.text
+        assert "jane@example.com" not in caplog.text
 
     def test_create_against_inaccessible_calendar_is_auth_error(
         self, provider: GoogleCalendarProvider, events: FakeEvents

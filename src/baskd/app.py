@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from baskd import __version__
 from baskd.api import events, health
 from baskd.api.errors import register_error_handlers
+from baskd.api.failure_log import assign_request_id
 from baskd.ports import CalendarProvider
 from baskd.providers import build_provider
 from baskd.settings import Settings
@@ -55,6 +56,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.provider = provider
+    app.middleware("http")(assign_request_id)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(events.router)

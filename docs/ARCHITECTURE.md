@@ -237,8 +237,17 @@ flowchart LR
     CANC["GET returned status: cancelled"] --> NF
 ```
 
-Only `invalid_request` and `provider_auth_error` include text from the provider, and only
-Google's `message` field, never URLs or payloads.
+No public message includes text from the provider: Google's `message` can echo request
+data, so the adapter writes its own provider-neutral sentences and logs only Google's HTTP
+status and `reason` codes. Each error class also carries a `category` (`invalid_input`,
+`not_found`, `access_denied`, `provider_failure`, `internal`) and a `retryable` flag; the
+README's error table is the public version of both.
+
+Every failed request writes one JSON `request_failed` line (`api/failure_log.py`) with the
+operation, error code and category, HTTP status, whether the provider was called, and the
+`X-Request-ID`. "Provider was called" is recorded by the thin wrapper `get_provider` hands to
+routes (`api/dependencies.py`), so a 422 or a rejected cursor is logged as never having
+reached the provider.
 
 ## 6. Testing strategy
 

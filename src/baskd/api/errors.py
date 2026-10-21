@@ -10,7 +10,6 @@ problem, without echoing the submitted input back.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -20,6 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from baskd.api.failure_log import REQUEST_ID_HEADER, log_failure, request_id_of
 from baskd.errors import (
     CalendarError,
     EventNotFound,
@@ -28,8 +28,6 @@ from baskd.errors import (
     ProviderError,
     ProviderUnavailable,
 )
-
-logger = logging.getLogger(__name__)
 
 #: Which HTTP status each domain error maps to. Most specific first; the base class last.
 STATUS_BY_ERROR: dict[type[CalendarError], int] = {
@@ -98,10 +96,15 @@ def register_error_handlers(app: FastAPI) -> None:
     """Attach the handlers to ``app``. Called once from :func:`baskd.app.create_app`."""
 
     @app.exception_handler(CalendarError)
-    async def handle_calendar_error(_: Request, exc: CalendarError) -> JSONResponse:
+    async def handle_calendar_error(request: Request, exc: CalendarError) -> JSONResponse:
         status_code = status_for(exc)
-        if status_code >= 500:
-            logger.error("Provider failure reported to client: %s: %s", exc.code, exc.message)
+        log_failure(
+            request,
+            status=status_code,
+            error=exc.code,
+            category=exc.category,
+            retryable=exc.retryable,
+        )
         headers = (
             {"Retry-After": RETRY_AFTER_SECONDS}
             if status_code == status.HTTP_503_SERVICE_UNAVAILABLE
@@ -110,34 +113,62 @@ def register_error_handlers(app: FastAPI) -> None:
         return error_response(status_code, exc.code, exc.message, headers=headers)
 
     @app.exception_handler(RequestValidationError)
-    async def handle_request_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
-        return error_response(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "validation_error",
-            "Request validation failed",
-            details=_validation_details(exc.errors()),
-        )
+    async def handle_request_validation(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return _validation_failed(request, exc.errors())
 
     @app.exception_handler(ValidationError)
-    async def handle_model_validation(_: Request, exc: ValidationError) -> JSONResponse:
-        return error_response(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "validation_error",
-            "Request validation failed",
-            details=_validation_details(exc.errors()),
-        )
+    async def handle_model_validation(request: Request, exc: ValidationError) -> JSONResponse:
+        return _validation_failed(request, exc.errors())
 
     @app.exception_handler(StarletteHTTPException)
-    async def handle_http_exception(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        log_failure(
+            request,
+            status=exc.status_code,
+            error="http_error",
+            category="not_found" if exc.status_code == 404 else "invalid_input",
+            retryable=False,
+        )
         message = exc.detail if isinstance(exc.detail, str) else "HTTP error"
         return error_response(exc.status_code, "http_error", message, headers=exc.headers)
 
     @app.exception_handler(Exception)
-    async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled error", exc_info=exc)
-        return error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "internal_error", "Internal server error"
+    async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
+        # A bug, so the traceback is logged. This handler runs outside the middleware
+        # stack, so it must add the request id header itself.
+        log_failure(
+            request,
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error="internal_error",
+            category="internal",
+            retryable=False,
+            exc_info=exc,
         )
+        request_id = request_id_of(request)
+        return error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "Internal server error",
+            headers={REQUEST_ID_HEADER: request_id} if request_id else None,
+        )
+
+
+def _validation_failed(request: Request, errors: Sequence[Any]) -> JSONResponse:
+    log_failure(
+        request,
+        status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        error="validation_error",
+        category="invalid_input",
+        retryable=False,
+    )
+    return error_response(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "validation_error",
+        "Request validation failed",
+        details=_validation_details(errors),
+    )
 
 
 def documented_errors(*status_codes: int) -> dict[int | str, dict[str, Any]]:
