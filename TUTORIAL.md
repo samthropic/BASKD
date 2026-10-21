@@ -77,6 +77,99 @@ curl -s -i -X DELETE "$API/events/t2pp3k8vbgmrbfg221b7413h20"
 **Actual:** as expected. `204` for `t2pp3k8vbgmrbfg221b7413h20`, empty body.
 `X-Request-ID: 35c3f40b0d754e190d01c1fa90809aef`.
 
+## Get an event: `GET /events/{id}`
+
+Owner: Arda Dinc. I ran this against our real Google calendar (`provider: google` in
+`/health`) on commit `855e59d` (includes #20, so responses carry `X-Request-ID`), on macOS,
+on 21 Oct 2026.
+
+**What this shows:** reading one event back returns it exactly as Google stored it, with
+times converted to UTC whatever offset they were sent with; an id that does not exist is an
+honest `404 event_not_found`; and that failure leaves one sanitized log line carrying the
+same request id the client received, so a caller's bug report can be matched to the server.
+
+The whole run is scripted in [`docs/demo/get-demo.sh`](docs/demo/get-demo.sh):
+`bash docs/demo/get-demo.sh` with the server running. The output below is copied verbatim
+from that run (`date`, `server` and `content-*` headers filtered out by the script; the
+`web_link` is shortened because it encodes our calendar id).
+
+**Preparation.** One event in an otherwise empty window on Jan 29, 2027, sent with a New York
+offset (`-05:00`) so that step 1 can show the conversion to UTC:
+
+```bash
+API=http://127.0.0.1:8000
+ID=$(curl -s $API/events -H 'Content-Type: application/json' \
+  -d '{"title":"BASKD get demo","start":"2027-01-29T10:00:00-05:00","end":"2027-01-29T10:30:00-05:00","location":"NYU Tandon"}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+```
+
+### 1. Get the event
+
+**Expected:** `200`, the event Google stored, with `start`/`end` as `15:00Z`/`15:30Z` (10:00
+New York time in UTC), `all_day: false`, the location echoed, `description: null` because we
+sent none, and an `X-Request-ID` header.
+
+```bash
+curl -s -i "$API/events/$ID"
+```
+
+**Actual:** as expected.
+
+```text
+HTTP/1.1 200 OK
+x-request-id: 1c0afde259e549e997b6974277209d4e
+
+{"id":"47lii8aep3o0e7j4iu7narhen0","title":"BASKD get demo","start":"2027-01-29T15:00:00Z","end":"2027-01-29T15:30:00Z","all_day":false,"description":null,"location":"NYU Tandon","web_link":"https://www.google.com/calendar/event?eid=…"}
+```
+
+### 2. Failure: an id that does not exist
+
+**Expected:** `404` with `{"error": {"code": "event_not_found", ...}}`. Google answers
+`404 notFound`; the service translates it into our own error, so no Google text reaches the
+client. The response carries an `X-Request-ID`.
+
+```bash
+curl -s -i "$API/events/baskd-demo-no-such-event"
+```
+
+**Actual:** as expected.
+
+```text
+HTTP/1.1 404 Not Found
+x-request-id: fb19e5953021439491ec65fa76abcb99
+
+{"error":{"code":"event_not_found","message":"Event 'baskd-demo-no-such-event' was not found"}}
+```
+
+### 3. The failure in the server log
+
+**Expected:** one `request_failed` JSON line for step 2 with the same `request_id` as the
+response header, the operation, the category and whether the provider was involved, and no
+event content, calendar id or credentials. Step 1 succeeded, so it logs no failure line.
+
+**Actual:** as expected. The Google adapter logs the raw answer it translated, then the API
+logs the failure with `request_id` `fb19e595…`, the same id the client got:
+
+```text
+INFO:     127.0.0.1:58646 - "POST /events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58659 - "GET /events/47lii8aep3o0e7j4iu7narhen0 HTTP/1.1" 200 OK
+2026-10-21 18:04:45,746 INFO baskd.providers.google: Google Calendar call failed: http_status=404 reasons=['notFound'] -> event_not_found
+2026-10-21 18:04:45,747 WARNING baskd.api.failures: {"event": "request_failed", "operation": "get_event", "status": 404, "error": "event_not_found", "category": "not_found", "provider_involved": true, "retryable": false, "method": "GET", "route": "/events/{event_id}", "request_id": "fb19e5953021439491ec65fa76abcb99"}
+INFO:     127.0.0.1:58668 - "GET /events/baskd-demo-no-such-event HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58677 - "DELETE /events/47lii8aep3o0e7j4iu7narhen0 HTTP/1.1" 204 No Content
+```
+
+### Cleanup
+
+**Expected:** `204` for the demo event, then `{"items": [], "next_cursor": null}`.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$API/events/$ID"
+curl -s "$API/events?from=2027-01-29T00:00:00Z&to=2027-01-30T00:00:00Z"
+```
+
+**Actual:** `204`, then `{"items":[],"next_cursor":null}`. The window is empty again.
+
 ## List events: `GET /events`
 
 I ran this against our real Google calendar (`provider: google` in `/health`) on commit `3153e3b`.
