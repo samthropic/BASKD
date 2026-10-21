@@ -11,7 +11,7 @@ commands in a second one. `curl -s http://127.0.0.1:8000/health` should report
 
 ## List events: `GET /events`
 
-Run on 2026-10-20 at 23:02 ET, Linux, provider `google`, at `ce9b5f8` (`arda/milestone-1` at `3153e3b` plus this docs change; no code differences).
+I ran this against our real Google calendar (`provider: google` in `/health`) on commit `ce9b5f8`.
 
 **What this shows:** listing a time window one page at a time, following `next_cursor` to
 the end, and the service refusing a cursor that is reused with a different window.
