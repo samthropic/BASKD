@@ -182,16 +182,25 @@ class GoogleCalendarProvider:
             result = request.execute(http=http, num_retries=0)
         except HttpError as exc:
             error = translate_http_error(exc, event_id=event_id)
-            logger.warning(
-                "Google Calendar call failed: http_status=%s -> %s", _status_of(exc), error.code
+            status = _status_of(exc)
+            # A missing event is an ordinary outcome; everything else deserves attention.
+            logger.log(
+                logging.INFO if status in _GONE_STATUSES else logging.WARNING,
+                "Google Calendar call failed: http_status=%s reasons=%s -> %s",
+                status,
+                sorted(_error_reasons(exc)),
+                error.code,
             )
             raise error from exc
         except RefreshError as exc:
-            logger.error("Google rejected the service-account credentials: %s", exc)
-            raise ProviderAuthError("Google rejected the service-account credentials") from exc
+            # The exception text can quote the token endpoint's response; log only its type.
+            logger.error("Google rejected the service-account credentials (%s)", type(exc).__name__)
+            raise ProviderAuthError(
+                "The calendar provider rejected the service's credentials"
+            ) from exc
         except (TransportError, httplib2.HttpLib2Error, OSError) as exc:
             logger.warning("Google Calendar unreachable: %s", type(exc).__name__)
-            raise ProviderUnavailable("Google Calendar could not be reached") from exc
+            raise ProviderUnavailable("The calendar provider could not be reached") from exc
         return result if isinstance(result, dict) else {}
 
 
@@ -202,25 +211,26 @@ def translate_http_error(exc: HttpError, *, event_id: str | None = None) -> Cale
     """Map an SDK ``HttpError`` to the provider-neutral error hierarchy.
 
     ``event_id`` tells us whether a 404 refers to an event (-> not found) or to the
-    calendar itself (-> misconfiguration / permissions).
+    calendar itself (-> misconfiguration / permissions). Messages are our own: Google's
+    error text is not copied into the public contract, and the provider's status and
+    ``reason`` codes are only logged (by ``_execute``).
     """
     status = _status_of(exc)
-    reasons, message = _error_details(exc)
     if status in _GONE_STATUSES:
         if event_id is not None:
             return EventNotFound(event_id)
         return ProviderAuthError("Calendar not found or not shared with the service account")
     if status == 400:
-        return InvalidRequest(f"Google Calendar rejected the request: {message}")
+        return InvalidRequest("The calendar provider rejected the request as invalid")
     if status == 401:
-        return ProviderAuthError("Google Calendar rejected our credentials")
+        return ProviderAuthError("The calendar provider rejected the service's credentials")
     if status == 403:
-        if reasons & _QUOTA_REASONS:
-            return ProviderUnavailable("Google Calendar quota exceeded; retry later")
-        return ProviderAuthError(f"Google Calendar denied access: {message}")
+        if _error_reasons(exc) & _QUOTA_REASONS:
+            return ProviderUnavailable("The calendar provider's quota is exhausted; retry later")
+        return ProviderAuthError("The calendar provider denied access to the calendar")
     if status in _TRANSIENT_STATUSES:
-        return ProviderUnavailable(f"Google Calendar is temporarily unavailable (HTTP {status})")
-    return ProviderError(f"Unexpected response from Google Calendar (HTTP {status}): {message}")
+        return ProviderUnavailable("The calendar provider is temporarily unavailable")
+    return ProviderError("The calendar provider returned an unexpected response")
 
 
 def event_from_google(resource: Mapping[str, Any]) -> Event:
@@ -297,7 +307,7 @@ def _parse_edge(edge: Mapping[str, Any]) -> tuple[datetime, bool]:
     if "date" in edge:
         day = date.fromisoformat(edge["date"])
         return datetime.combine(day, time.min, tzinfo=UTC), True
-    raise ProviderError("Google returned an event without a start or end time")
+    raise ProviderError("The calendar provider returned an event without a start or end time")
 
 
 def _zone(name: str | None) -> tzinfo:
@@ -323,19 +333,21 @@ def _status_of(exc: HttpError) -> int:
         return 0
 
 
-def _error_details(exc: HttpError) -> tuple[set[str], str]:
-    """Extract Google's ``reason`` codes and human message from an error body."""
+def _error_reasons(exc: HttpError) -> set[str]:
+    """Extract Google's machine-readable ``reason`` codes from an error body.
+
+    Google's human-readable ``message`` is deliberately ignored: it can echo request data,
+    so it goes neither into responses nor into logs.
+    """
     reasons: set[str] = set()
-    message = ""
     try:
         raw = exc.content.decode("utf-8") if isinstance(exc.content, bytes) else exc.content
         payload = json.loads(raw)
         error = payload.get("error") if isinstance(payload, dict) else None
         if isinstance(error, dict):
-            message = str(error.get("message") or "")
             for item in error.get("errors") or []:
                 if isinstance(item, dict) and item.get("reason"):
                     reasons.add(str(item["reason"]))
     except (AttributeError, TypeError, ValueError):
         pass
-    return reasons, message or f"HTTP {_status_of(exc)}"
+    return reasons
