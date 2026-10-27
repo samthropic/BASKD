@@ -33,7 +33,7 @@ class TestCreateAndGet:
         with pytest.raises(EventNotFound) as info:
             memory_provider.get_event("missing")
         assert info.value.event_id == "missing"
-        assert info.value.code == "event_not_found"
+        assert info.value.code == "not_found"
 
 
 class TestReplace:

@@ -18,10 +18,10 @@ from tests.conftest import event_payload, failing_client
 @pytest.mark.parametrize(
     ("error", "status", "code"),
     [
-        (EventNotFound("e1"), 404, "event_not_found"),
-        (InvalidRequest("bad cursor"), 400, "invalid_request"),
+        (EventNotFound("e1"), 404, "not_found"),
+        (InvalidRequest("bad cursor"), 400, "invalid_input"),
         (ProviderUnavailable("down"), 503, "provider_unavailable"),
-        (ProviderAuthError("denied"), 502, "provider_auth_error"),
+        (ProviderAuthError("denied"), 502, "access_denied"),
         (ProviderError("weird"), 502, "provider_error"),
         (CalendarError("unknown"), 500, "calendar_error"),
     ],

@@ -4,6 +4,10 @@ Each section is one operation, run by its owner against the real Google Calendar
 `curl` or the interactive docs at `/docs`, with screenshots of what actually came back.
 Every step says what we expected, then shows what actually came back.
 
+> These demos were recorded on `v0.1.0`. From `v0.2.0` the error codes are `invalid_input`
+> (was `validation_error` and `invalid_request`), `not_found` (was `event_not_found`) and
+> `access_denied` (was `provider_auth_error`); the README error table is current.
+
 Setup for every section: configure `.env` as in [`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md),
 then `make run` in one terminal (the service listens on `http://127.0.0.1:8000`) and run the
 commands in a second one. `curl -s http://127.0.0.1:8000/health` should report

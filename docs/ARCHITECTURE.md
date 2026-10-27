@@ -88,7 +88,7 @@ sequenceDiagram
     F->>V: validate body
     alt invalid input (naive time, end not after start, unknown field)
         V-->>E: RequestValidationError
-        E-->>C: 422 {error: {code: validation_error, details: [...]}}
+        E-->>C: 422 {error: {code: invalid_input, details: [...]}}
     else valid
         F->>R: create_event(data: EventInput, provider)
         R->>P: provider.create_event(data)
@@ -108,8 +108,8 @@ sequenceDiagram
 ```
 
 For create, a Google `404` means that the configured calendar does not exist or was not
-shared with the service account, so it becomes `502 provider_auth_error`. `404
-event_not_found` only applies to operations that address an existing event id.
+shared with the service account, so it becomes `502 access_denied`. `404
+not_found` only applies to operations that address an existing event id.
 
 In words:
 
@@ -208,12 +208,12 @@ globals.
 
 | Exception (`baskd.errors`) | `code` | HTTP | Raised when |
 | --- | --- | --- | --- |
-| `EventNotFound` | `event_not_found` | 404 | get/replace/delete of an unknown or deleted id |
-| `InvalidRequest` | `invalid_request` | 400 | the provider rejected something we could not validate up front (bad cursor, a Google 400) |
+| `EventNotFound` | `not_found` | 404 | get/replace/delete of an unknown or deleted id |
+| `InvalidRequest` | `invalid_input` | 400 | the provider rejected something we could not validate up front (bad cursor, a Google 400) |
 | `ProviderUnavailable` | `provider_unavailable` | 503 + `Retry-After: 5` | timeout, network error, 429, 5xx, quota |
-| `ProviderAuthError` | `provider_auth_error` | 502 | 401/403, bad key, calendar not shared |
+| `ProviderAuthError` | `access_denied` | 502 | 401/403, bad key, calendar not shared |
 | `ProviderError` | `provider_error` | 502 | anything else from the provider |
-| (FastAPI validation) | `validation_error` | 422 | invalid body/query/path |
+| (FastAPI validation) | `invalid_input` | 422 | invalid body/query/path |
 | (Starlette `HTTPException`) | `http_error` | as raised | unknown routes, method not allowed |
 | (anything else) | `internal_error` | 500 | bug; logged with traceback, message is generic |
 
@@ -224,9 +224,9 @@ How a Google failure becomes one of those (all of this lives in
 ```mermaid
 flowchart LR
     H["HttpError from the SDK"] --> S{HTTP status}
-    S -->|"404 / 410, call had an event_id"| NF["EventNotFound<br/>404 event_not_found"]
-    S -->|"404, no event_id (create / list)"| AUTH["ProviderAuthError<br/>502 provider_auth_error<br/>'calendar not found or not shared'"]
-    S -->|"400"| INV["InvalidRequest<br/>400 invalid_request<br/>(Google's message included)"]
+    S -->|"404 / 410, call had an event_id"| NF["EventNotFound<br/>404 not_found"]
+    S -->|"404, no event_id (create / list)"| AUTH["ProviderAuthError<br/>502 access_denied<br/>'calendar not found or not shared'"]
+    S -->|"400"| INV["InvalidRequest<br/>400 invalid_input<br/>(Google's message included)"]
     S -->|"401"| AUTH
     S -->|"403 with quota reason"| UNAV["ProviderUnavailable<br/>503 provider_unavailable + Retry-After"]
     S -->|"403 otherwise"| AUTH

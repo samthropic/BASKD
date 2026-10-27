@@ -104,7 +104,7 @@ integration run.
 | **`PUT` full replacement, no `PATCH` yet** | `PATCH` with merge | Full replacement has no merge edge cases (e.g. moving only `start` past the old `end`) and reuses the create validation unchanged | Clients re-send all fields; `PATCH` is in NEXT_STEPS |
 | **Second `DELETE` → 404** | 204 (idempotent) | Honest about provider behaviour (Google: 410 Gone) and simplest for the fake to mirror | Documented in the API table |
 | **No retries inside the service for M1** | SDK `num_retries` | Retrying a `POST` without an idempotency key can create duplicates; we return 503 + `Retry-After` and let the caller decide | "Repeated requests / provider failures" level adds retries with idempotency |
-| **One error envelope** `{"error": {code, message, details?}}` | FastAPI's default `{"detail": ...}` | Stable machine-readable `code` is testable and does not leak provider messages except where useful (`invalid_request`) | Custom handlers in `api/errors.py` |
+| **One error envelope** `{"error": {code, message, details?}}` | FastAPI's default `{"detail": ...}` | Stable machine-readable `code` is testable and does not leak provider messages except where useful (`invalid_input`) | Custom handlers in `api/errors.py` |
 | **Synchronous handlers** | `async` + async Google client | The official SDK is sync; FastAPI runs sync handlers in a thread pool; simpler to reason about | Per-call `AuthorizedHttp` for thread safety |
 | **`uv` + lockfile, Python 3.12 only** | pip + requirements.txt, Poetry | Exact reproduction with one command; fast CI | Everyone installs `uv` |
 | **Default provider = `memory`** | Fail without config | `uv run uvicorn ...` works on a fresh clone; `/health` and the startup log always state the provider in use | A teammate must set `BASKD_PROVIDER=google` deliberately |
@@ -114,15 +114,15 @@ integration run.
 | Google Calendar fact | Reflected as |
 | --- | --- |
 | Service accounts cannot invite attendees without domain-wide delegation (Google returns 403 `forbiddenForServiceAccounts`) | No attendee field in the API |
-| Deleted events: `events.get` may return `status: "cancelled"`; `events.delete` on a deleted event → 410 Gone | Both → `404 event_not_found` |
-| 404 is returned both for a missing event and for a calendar the robot cannot see | 404 on get/replace/delete → `404 event_not_found`; 404 on create/list → `502 provider_auth_error` with a "not shared" hint |
-| All-day events have `date` not `dateTime` | Read as `all_day: true` with midnight-UTC bounds; cannot be created or replaced (`PUT` → `400 invalid_request`, event unchanged) |
-| Recurring events are one resource with instances | Listed as expanded instances (`singleEvents=true`), cannot be created; `PUT` on a series → `400 invalid_request`, on a single occurrence → replaces only that occurrence |
+| Deleted events: `events.get` may return `status: "cancelled"`; `events.delete` on a deleted event → 410 Gone | Both → `404 not_found` |
+| 404 is returned both for a missing event and for a calendar the robot cannot see | 404 on get/replace/delete → `404 not_found`; 404 on create/list → `502 access_denied` with a "not shared" hint |
+| All-day events have `date` not `dateTime` | Read as `all_day: true` with midnight-UTC bounds; cannot be created or replaced (`PUT` → `400 invalid_input`, event unchanged) |
+| Recurring events are one resource with instances | Listed as expanded instances (`singleEvents=true`), cannot be created; `PUT` on a series → `400 invalid_input`, on a single occurrence → replaces only that occurrence |
 | `events.update` replaces the whole resource; sending back the fetched resource is Google's documented way to preserve fields we do not manage | `PUT` is fetch-modify-update inside the provider |
 | Times come back in the calendar's time zone | Normalised to UTC |
 | `googleapiclient`'s HTTP transport is not thread-safe | Fresh `AuthorizedHttp` + explicit timeout per call |
 | Quota errors arrive as 403 with `rateLimitExceeded`/`userRateLimitExceeded` as well as 429 | All → `503 provider_unavailable` + `Retry-After` |
-| Google rejects `end <= start` ("The specified time range is empty") | Caught by our validation first (422); if it ever reaches Google → `400 invalid_request` |
+| Google rejects `end <= start` ("The specified time range is empty") | Caught by our validation first (422); if it ever reaches Google → `400 invalid_input` |
 
 ## 4. Open questions for staff (post in `#help`)
 
