@@ -4,7 +4,7 @@ Providers issue their own opaque page tokens (an offset for the in-memory provid
 ``nextPageToken``). Presented with a different window, such a token would silently continue
 some other listing, and what Google does with a mismatched ``pageToken`` is undocumented.
 So the API wraps the provider's token together with the window, and a cursor presented
-with any other window is rejected as ``400 invalid_request``. ``limit`` may change between
+with any other window is rejected as ``400 invalid_input``. ``limit`` may change between
 pages. The wrapper is not a security boundary: a client that decodes and edits a cursor
 only gets what the provider makes of the edited token.
 """

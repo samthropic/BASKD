@@ -5,7 +5,7 @@ well-formed one, otherwise a fresh one. When a request fails, :func:`log_failure
 single JSON log line a teammate can search for, for example::
 
     {"event": "request_failed", "operation": "get_event", "status": 404,
-     "error": "event_not_found", "category": "not_found", "provider_involved": true,
+     "error": "not_found", "category": "not_found", "provider_involved": true,
      "retryable": false, "method": "GET", "route": "/events/{event_id}",
      "request_id": "6f1c..."}
 

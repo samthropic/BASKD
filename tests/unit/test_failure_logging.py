@@ -66,12 +66,12 @@ def test_invalid_input_never_reaches_the_provider(
 ) -> None:
     response = client.post("/events", json=event_payload(end="2026-10-07T14:00:00Z"))
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["code"] == "invalid_input"
     assert only_failure(failure_log) == {
         "event": "request_failed",
         "operation": "create_event",
         "status": 422,
-        "error": "validation_error",
+        "error": "invalid_input",
         "category": "invalid_input",
         "provider_involved": False,
         "retryable": False,
@@ -86,7 +86,7 @@ def test_missing_event_is_reported_by_the_provider(
 ) -> None:
     response = client.get("/events/does-not-exist")
     assert response.status_code == 404
-    assert response.json()["error"]["code"] == "event_not_found"
+    assert response.json()["error"]["code"] == "not_found"
     line = only_failure(failure_log)
     assert line["operation"] == "get_event"
     assert line["route"] == "/events/{event_id}"  # the template: event ids are not logged

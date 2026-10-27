@@ -94,7 +94,7 @@ class TestCreate:
         response = client.post("/events", json=event_payload(**overrides))
         assert response.status_code == 422
         error = response.json()["error"]
-        assert error["code"] == "validation_error"
+        assert error["code"] == "invalid_input"
         locations = [detail["loc"] for detail in error["details"]]
         if field is None:
             assert ["body"] in locations
@@ -118,7 +118,7 @@ class TestCreate:
         assert response.status_code == 422
         error = response.json()["error"]
         assert set(error) == {"code", "message", "details"}
-        assert error["code"] == "validation_error"
+        assert error["code"] == "invalid_input"
         assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
             (["body", field], "string_too_long")
         ]
@@ -139,7 +139,7 @@ class TestCreate:
     def test_missing_body_is_422(self, client: TestClient) -> None:
         response = client.post("/events")
         assert response.status_code == 422
-        assert response.json()["error"]["code"] == "validation_error"
+        assert response.json()["error"]["code"] == "invalid_input"
 
     def test_malformed_json_is_422(self, client: TestClient) -> None:
         response = client.post(
@@ -153,7 +153,7 @@ class TestGet:
         response = client.get("/events/does-not-exist")
         assert response.status_code == 404
         assert response.json() == {
-            "error": {"code": "event_not_found", "message": "Event 'does-not-exist' was not found"}
+            "error": {"code": "not_found", "message": "Event 'does-not-exist' was not found"}
         }
 
 
@@ -224,7 +224,7 @@ class TestList:
         response = client.get("/events", params={"limit": 251})
         assert response.status_code == 422
         error = response.json()["error"]
-        assert error["code"] == "validation_error"
+        assert error["code"] == "invalid_input"
         assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
             (["query", "limit"], "less_than_equal")
         ]
@@ -246,7 +246,7 @@ class TestList:
     def test_invalid_query_is_422(self, client: TestClient, params: dict[str, Any]) -> None:
         response = client.get("/events", params=params)
         assert response.status_code == 422, response.text
-        assert response.json()["error"]["code"] == "validation_error"
+        assert response.json()["error"]["code"] == "invalid_input"
 
     @pytest.mark.parametrize(
         "cursor",
@@ -260,7 +260,7 @@ class TestList:
     def test_malformed_cursor_is_400(self, client: TestClient, cursor: str) -> None:
         response = client.get("/events", params={"cursor": cursor})
         assert response.status_code == 400
-        assert response.json()["error"]["code"] == "invalid_request"
+        assert response.json()["error"]["code"] == "invalid_input"
 
     def test_traversal_returns_every_event_exactly_once(self, client: TestClient) -> None:
         """Seven events, at most three per page: the combined pages are the whole window."""
@@ -292,7 +292,7 @@ class TestList:
             params={"from": "2026-10-07T11:00:00Z", "limit": 1, "cursor": first["next_cursor"]},
         )
         assert response.status_code == 400
-        assert response.json()["error"]["code"] == "invalid_request"
+        assert response.json()["error"]["code"] == "invalid_input"
 
     def test_cursor_allows_another_limit_and_another_spelling_of_the_window(
         self, client: TestClient
@@ -355,7 +355,7 @@ class TestReplace:
     def test_unknown_id_is_404(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload())
         assert response.status_code == 404
-        assert response.json()["error"]["code"] == "event_not_found"
+        assert response.json()["error"]["code"] == "not_found"
 
     def test_invalid_body_is_422_even_for_unknown_id(self, client: TestClient) -> None:
         response = client.put("/events/missing", json=event_payload(title=""))
@@ -378,7 +378,7 @@ class TestReplace:
         created = create(client)
         response = client.put(f"/events/{created['id']}", json=event_payload(**overrides))
         assert response.status_code == 422
-        assert response.json()["error"]["code"] == "validation_error"
+        assert response.json()["error"]["code"] == "invalid_input"
         assert client.get(f"/events/{created['id']}").json() == created
 
     def test_missing_required_field_is_422(self, client: TestClient) -> None:
@@ -403,7 +403,7 @@ class TestReplace:
             response = client.put("/events/holiday", json=event_payload())
             assert response.status_code == 400
             assert response.json()["error"] == {
-                "code": "invalid_request",
+                "code": "invalid_input",
                 "message": ALL_DAY_NOT_REPLACEABLE,
             }
             assert client.get("/events/holiday").json()["all_day"] is True

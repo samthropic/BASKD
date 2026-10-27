@@ -6,7 +6,12 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Breaking changes
+- Error codes renamed to the names Teams 2, 5 and 7 share in their joint Calendar API
+  contract: `validation_error` and `invalid_request` → `invalid_input` (still `422` and
+  `400`), `event_not_found` → `not_found`, `provider_auth_error` → `access_denied`. HTTP
+  statuses are unchanged. Clients that branch on `code` must update, and tell the two
+  `invalid_input` cases apart by status. (#31)
 
 ## [0.1.0] - 2026-10-21
 
