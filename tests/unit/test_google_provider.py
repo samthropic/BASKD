@@ -16,9 +16,11 @@ from typing import Any
 
 import httplib2
 import pytest
+from fastapi.testclient import TestClient
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
 
+from baskd.app import create_app
 from baskd.errors import (
     EventNotFound,
     InvalidRequest,
@@ -29,6 +31,7 @@ from baskd.errors import (
 from baskd.models import ListEventsQuery
 from baskd.ports import CalendarProvider
 from baskd.providers.google import (
+    WRITE_OUTCOME_UNKNOWN,
     GoogleCalendarProvider,
     event_from_google,
     merge_into_resource,
@@ -36,6 +39,7 @@ from baskd.providers.google import (
     to_rfc3339,
     translate_http_error,
 )
+from baskd.settings import Settings
 from tests.conftest import T0, event_input
 
 CALENDAR_ID = "team-test@group.calendar.google.com"
@@ -292,6 +296,19 @@ class TestTranslateHttpError:
     def test_transient_statuses_are_unavailable(self, status: int) -> None:
         assert isinstance(translate_http_error(http_error(status)), ProviderUnavailable)
 
+    @pytest.mark.parametrize("status", [500, 502, 503, 504])
+    def test_5xx_on_a_write_is_an_unknown_outcome(self, status: int) -> None:
+        error = translate_http_error(http_error(status), event_id="e1", write=True)
+        assert isinstance(error, ProviderError)
+        assert error.retryable is False
+        assert error.message == WRITE_OUTCOME_UNKNOWN
+
+    @pytest.mark.parametrize(
+        "error", [http_error(429), http_error(403, "rateLimitExceeded")], ids=["429", "quota"]
+    )
+    def test_rate_limited_write_was_not_applied_so_stays_retryable(self, error: HttpError) -> None:
+        assert isinstance(translate_http_error(error, write=True), ProviderUnavailable)
+
     def test_anything_else_is_provider_error(self) -> None:
         assert isinstance(translate_http_error(http_error(409, "duplicate")), ProviderError)
 
@@ -537,3 +554,90 @@ class TestProviderCalls:
         events.enqueue("list", raised)
         with pytest.raises(expected):
             provider.list_events(ListEventsQuery())
+
+    @pytest.mark.parametrize(
+        "raised",
+        [
+            TimeoutError("timed out"),
+            ConnectionResetError(),
+            ConnectionRefusedError(),
+            httplib2.HttpLib2Error("bad status"),
+        ],
+        ids=["timeout", "reset", "refused", "httplib2"],
+    )
+    def test_create_with_no_answer_has_an_unknown_outcome(
+        self, provider: GoogleCalendarProvider, events: FakeEvents, raised: Exception
+    ) -> None:
+        events.enqueue("insert", raised)
+        with pytest.raises(ProviderError, match="may or may not have been applied") as caught:
+            provider.create_event(event_input())
+        assert caught.value.retryable is False
+
+    def test_replace_update_with_no_answer_has_an_unknown_outcome(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        events.enqueue("get", GOOGLE_EVENT)
+        events.enqueue("update", TimeoutError("timed out"))
+        with pytest.raises(ProviderError) as caught:
+            provider.replace_event("abc123def456", event_input())
+        assert caught.value.retryable is False
+
+    def test_replace_whose_fetch_times_out_changed_nothing(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        # The read before the update failed, so no write was sent: safe to retry.
+        events.enqueue("get", TimeoutError("timed out"))
+        with pytest.raises(ProviderUnavailable):
+            provider.replace_event("abc123def456", event_input())
+        assert [method for method, _ in events.calls] == ["get"]
+
+    @pytest.mark.parametrize(
+        "raised",
+        [
+            TransportError("token refresh failed"),
+            httplib2.ServerNotFoundError("Unable to find the server"),
+        ],
+        ids=["token-refresh", "dns"],
+    )
+    def test_write_that_never_reached_google_stays_retryable(
+        self, provider: GoogleCalendarProvider, events: FakeEvents, raised: Exception
+    ) -> None:
+        events.enqueue("insert", raised)
+        with pytest.raises(ProviderUnavailable):
+            provider.create_event(event_input())
+
+    def test_delete_timeout_stays_retryable(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        # Repeating a delete is safe: if the first one landed, the second returns 404.
+        events.enqueue("delete", TimeoutError("timed out"))
+        with pytest.raises(ProviderUnavailable):
+            provider.delete_event("abc123def456")
+
+
+# -- the HTTP contract for a write whose outcome is unknown (joint contract rule 6) ---------
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "queued"),
+    [
+        ("POST", "/events", [("insert", TimeoutError("timed out"))]),
+        ("PUT", "/events/abc123def456", [("get", GOOGLE_EVENT), ("update", http_error(503))]),
+    ],
+    ids=["create-timeout", "replace-5xx"],
+)
+def test_unknown_write_outcome_is_502_without_retry_after(
+    events: FakeEvents,
+    provider: GoogleCalendarProvider,
+    method: str,
+    path: str,
+    queued: list[tuple[str, Any]],
+) -> None:
+    for sdk_method, outcome in queued:
+        events.enqueue(sdk_method, outcome)
+    client = TestClient(create_app(settings=Settings(_env_file=None), provider=provider))
+    body = {"title": "Standup", "start": "2026-10-07T15:00:00Z", "end": "2026-10-07T15:30:00Z"}
+    response = client.request(method, path, json=body)
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "provider_error"
+    assert "Retry-After" not in response.headers

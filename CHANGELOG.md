@@ -6,7 +6,11 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Breaking changes
+- A create or replace that times out, loses its connection or gets a 5xx from Google now
+  returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
+  `Retry-After`: the write may already have been applied, so re-sending it could create a
+  duplicate. Reads and deletes still return 503 (joint contract rule 6, #35).
 
 ## [0.1.0] - 2026-10-21
 
