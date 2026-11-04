@@ -117,7 +117,8 @@ class TestCreate:
         response = client.post("/events", json=event_payload(**{field: too_long}))
         assert response.status_code == 422
         error = response.json()["error"]
-        assert set(error) == {"code", "message", "details"}
+        assert set(error) == {"code", "message", "retryable", "details"}
+        assert error["retryable"] is False
         assert error["code"] == "invalid_input"
         assert [(detail["loc"], detail["type"]) for detail in error["details"]] == [
             (["body", field], "string_too_long")
@@ -153,7 +154,11 @@ class TestGet:
         response = client.get("/events/does-not-exist")
         assert response.status_code == 404
         assert response.json() == {
-            "error": {"code": "not_found", "message": "Event 'does-not-exist' was not found"}
+            "error": {
+                "code": "not_found",
+                "message": "Event 'does-not-exist' was not found",
+                "retryable": False,
+            }
         }
 
 
@@ -405,6 +410,7 @@ class TestReplace:
             assert response.json()["error"] == {
                 "code": "invalid_input",
                 "message": ALL_DAY_NOT_REPLACEABLE,
+                "retryable": False,
             }
             assert client.get("/events/holiday").json()["all_day"] is True
 
@@ -427,7 +433,9 @@ class TestDelete:
 def test_unknown_route_uses_error_envelope(client: TestClient) -> None:
     response = client.get("/nope")
     assert response.status_code == 404
-    assert response.json() == {"error": {"code": "http_error", "message": "Not Found"}}
+    assert response.json() == {
+        "error": {"code": "http_error", "message": "Not Found", "retryable": False}
+    }
 
 
 def test_openapi_documents_error_envelope(client: TestClient) -> None:
