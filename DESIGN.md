@@ -4,8 +4,8 @@
 | --- | --- |
 | **Authors** | Arda Dinc (draft), for Team 7 |
 | **Team and vertical** | Team 7 (Sam Fiallos, Arda Dinc, Bryant Luna-Ramos, Karthik Ganeshan, Daniel Zhang), Calendar vertical with Teams 2 and 5 |
-| **Reviewers** | Whole design: a Team 7 member who did not write it (requested: Sam Fiallos). Contract-facing parts (§3, §4, §6, §8): Team 2 or Team 5 (requested). See [§10](#10-review-record) |
-| **Status** | **In review** |
+| **Reviewers** | Whole design: Sam Fiallos and Karthik Ganeshan (Team 7). Contract-facing parts (§3, §4, §6, §8): Alexander Freedman and Leon Liu (Team 2). See [§10](#10-review-record) |
+| **Status** | **Approved** by Team 7; Team 2's review comments answered ([§10](#10-review-record)) |
 | **Last updated** | 2026-11-04 |
 | **Shared contract** | [`calendar-contract` `v0.1.0-rc.1`](https://github.com/Airbus-A330/OSPSD-Calendar/tree/v0.1.0-rc.1) (commit `1c1cad7`): [HTTP contract](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/docs/HTTP_CONTRACT.md), [Python interface](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/docs/PYTHON_INTERFACE.md), [conformance suite](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/src/calendar_contract/conformance.py) |
 | **Decision memo** | "Calendar API: joint contract (Teams 2, 5, 7)", version 4, agreed Oct 28, 2026. It is a Google Doc whose link lets anyone edit, so it is not linked from this public repository; its rules are restated, with the memo's rule numbers, in the shared repo's HTTP contract above |
@@ -198,7 +198,7 @@ and the command that produced it.
 | The request's UTC offset | Responses are always UTC | Rule 2 guarantees the instant, not the offset |
 | Sub-seconds | Dropped on the way in | Google stores whole seconds (rule 14) |
 | All-day events through the Python interface | The shared `Event` has no `all_day`, so `contract.py` returns midnight-UTC bounds without the flag | Over HTTP we keep `all_day`; the shared core has no all-day events |
-| A provider event that ends when it starts | Readable over HTTP; through `contract.py` it is `provider_error`, because the shared `Event` requires `end > start` | We raised this on the shared package ([§9](#9-open-questions)) |
+| A provider event that ends when it starts (zero duration) | Readable over HTTP; through `contract.py` it is `provider_error`, because the shared `Event` requires `end > start` | **Known difference, pending joint agreement.** Our HTTP response keeps the event; we raised the shared rule on the shared package ([§9](#9-open-questions), question 3) |
 | An untitled provider event | Read with `"title": ""` | Rule 13: a server never invents a title |
 | Attendees | Not offered | A service account cannot invite without domain-wide delegation |
 | Replacing an all-day event or a recurring series | Refused with `400 invalid_input`, event unchanged | Google would silently turn it into a timed event |
@@ -218,21 +218,28 @@ and the command that produced it.
 
 | Google outcome | Domain error (`errors.py`) | HTTP | `code` | `retryable` |
 | --- | --- | --- | --- | --- |
-| Body breaks a rule (we never call Google) | validation | 422 | `invalid_input` | false |
+| Body, path or query parameter breaks a rule (we never call Google) | validation | 422 | `invalid_input` | false |
 | ★ Body is not valid JSON (#34) | validation | 400 (was 422) | `invalid_input` | false |
-| 400 from Google; all-day or series replace; bad cursor | `InvalidRequest` | 400 | `invalid_input` | false |
+| Our extensions only: a list cursor that is malformed or was issued for another window; replacing an all-day event or a recurring series | `InvalidRequest` | 400 | `invalid_input` | false |
+| 400 from Google | `InvalidRequest` | 400 | `invalid_input` | false |
 | 404 or 410 on get/replace/delete, or a `cancelled` event | `EventNotFound` | 404 | `not_found` | false |
 | ★ 401, 403 (not quota), refused credentials, or 404 on create/list (calendar not shared) (#32) | `ProviderAuthError` | 403 (was 502) | `access_denied` | false |
-| 429, 5xx, or a 403 quota reason, on a read or delete | `ProviderUnavailable` | 503 + `Retry-After: 5` | `provider_unavailable` | true |
-| Timeout or network error on a read or delete | `ProviderUnavailable` | 503 + `Retry-After: 5` | `provider_unavailable` | true |
-| ★ Timeout or network error on a create or replace (#35) | `ProviderError` | 502 (was 503) | `provider_error` | false (was true) |
+| 429 or a 403 quota reason, on any operation | `ProviderUnavailable` | 503 + `Retry-After: 5` | `provider_unavailable` | true |
+| 5xx, timeout or network error on a read or delete | `ProviderUnavailable` | 503 + `Retry-After: 5` | `provider_unavailable` | true |
+| Timeout or network error before a write was sent: token refresh, DNS lookup, or the `events.get` that starts a replace | `ProviderUnavailable` | 503 + `Retry-After: 5` | `provider_unavailable` | true |
+| ★ 5xx, timeout or network error after the `events.insert` or `events.update` was sent (#35) | `ProviderError` | 502 (was 503) | `provider_error` | false (was true) |
 | Any other Google response | `ProviderError` | 502 | `provider_error` | false |
 
 Every row gains a `retryable` field in the body (#33); today only the error classes carry it.
-Whether a Google 5xx on a create or replace also means "outcome unknown" is open
-([§9](#9-open-questions)).
+The shared HTTP contract's status table makes a bad path or query parameter `422`, and we
+follow it. The two `400` cases in the "extensions only" row are not shared validation: the
+cursor belongs to our listing extension, and the replace refusal is our own decision about
+events the shared core cannot express. A 5xx on a create or replace counts as "outcome
+unknown", as Karthik's #35 branch already implements ([§9](#9-open-questions), question 1).
 
-**Retries.** The service retries nothing: the Google SDK runs with `num_retries=0`. For reads
+**Retries.** The service retries nothing itself: the Google SDK runs with `num_retries=0`. One
+exception is below our code: `httplib2` resends a request once if the connection drops before
+any status line arrives ([§8](#8-testing), gaps). For reads
 and delete, retrying is safe, but the client decides, guided by `retryable` and `Retry-After`.
 For create, retrying is not safe, because `events.insert` is not idempotent and a timed-out
 insert may have succeeded (rule 6). For replace, a repeat would usually be harmless, but the
@@ -344,9 +351,11 @@ unaffected.
 1. PR #38 adopts the package and runs its suite, against fakes and against real Google. This
    was our **early end-to-end step**, and it is done: on Nov 4 the suite's 10 create, get,
    replace and delete checks passed through `v0.1.0-rc.1` against our Google test calendar.
-2. PR #36 (#31) renames the codes. #32, #33 and #34 build on it; #35 builds on #33.
+2. PR #36 (#31) renames the codes. #32, #33 and #34 build on it. #35 does not need #33.
 3. #35 turns the strict expected failure in the conformance suite into an unexpected pass, which
-   fails CI until the `xfail` is removed. That is how we know the last rule is met.
+   fails CI until the `xfail` is removed. That is how we know the last rule is met. Whichever of
+   PR #38 and #35 merges second removes the `xfail` (Karthik checked that it passes on his
+   branch).
 4. `v0.2.0` is released by a coordinator other than the last two (`AGENTS.md` §5), with a
    fresh-checkout verification by someone else.
 5. Milestone 3: the consumer workflow in [§8](#8-testing) runs against our deployed service.
@@ -399,7 +408,10 @@ expected failure today (#35), so it shows up in every run until it is fixed.
 **Gaps, named.** The shared suite checks the Python interface, not HTTP. Our HTTP behaviour is
 checked by our own tests against our reading of the contract, and nothing yet checks that the
 three services answer the same HTTP request the same way. The uncertain-write case cannot be
-checked live. The consumer workflow below has not run against any deployed service yet.
+checked live. `httplib2`, under the Google SDK, resends a request once by itself if the
+connection drops before a status line arrives, whatever `num_retries` says; this is rare, but
+it means "the service never resends a write" is true of our code, not of the transport. The
+consumer workflow below has not run against any deployed service yet.
 
 **Consumer workflow.** The same code runs against any conforming service. It branches only on
 success, `code` and `retryable`, and it never resends a write that is not retryable:
@@ -441,13 +453,16 @@ against Teams 2 and 5 when their services are reachable.
 | A permission denial: 502 (our HW1 choice, since the service and not the caller is denied) or 403 | Accepted 403 so the contract could settle; recorded in `docs/DECISIONS.md` in #32 |
 | The shared `v0.1.0-rc.1` was published as "Latest", not pre-release, without a release PR | Raised in our review of shared PR #14. Accepted risk: we pin the commit |
 | Which codes are retryable is not stated per code in the package | Raised on shared PR #14; we follow the error classes and the memo |
-| The shared `Event` rejects an event whose end is not after its start, which Google can store | Deferred: [§9](#9-open-questions), question 3 |
+| The shared `Event` rejects an event whose end is not after its start, which Google can store | Labelled in §3 as a known difference pending joint agreement (Leon, Team 2); deferred to [§9](#9-open-questions), question 3 |
+| A 5xx on a write may have been applied (Karthik) | Treated as "outcome unknown", `502`; §4 row split |
+| Our `400` cases could be read as shared validation, which is `422` (Leon, Team 2) | §4 marks them as extension-only and explains why |
+| `httplib2` resends once on an early connection drop (Karthik) | Named in the gaps above; not changed |
 
 ## 9. Open questions
 
 | # | Question | Consequence | Owner | Next step |
 | --- | --- | --- | --- | --- |
-| 1 | Is a Google 5xx on a create or replace "outcome unknown" (502, not retryable) or "unavailable" (503, retryable)? | A retried create could duplicate an event | Karthik (proposed owner of #35) | Decide in the #35 PR; we lean to "unknown", the safer answer |
+| 1 | Is a Google 5xx on a create or replace "outcome unknown" (502, not retryable) or "unavailable" (503, retryable)? | A retried create could duplicate an event | Karthik (#35) | **Answered in review:** "unknown". Karthik's #35 branch maps it to 502; 429 and a quota 403 stay 503. Closed when #35 merges |
 | 2 | Memo question 2: after a timed-out create, the shared core gives a client no way to check whether the event exists | Clients of Team 5 (no listing) cannot recover; ours can only by listing | Arda | Open an issue on the shared repository with decision B's alternative, before the Nov 11 checkpoint |
 | 3 | The shared `Event`, and the HTTP contract's wording for response events, require `end > start`, but rule 2 requires it only of requests | A valid Google event cannot be read through the shared interface | Arda | Open a wording PR on the shared repository (promised in our review of PR #14) |
 | 4 | Nobody owns an HTTP-level conformance suite for the vertical | HTTP differences between the three services are caught only by each team's own tests | Unassigned across the three teams | Raise at the next joint checkpoint |
@@ -458,8 +473,10 @@ against Teams 2 and 5 when their services are reachable.
 
 | Reviewer | Scope | Where | Result |
 | --- | --- | --- | --- |
-| Team 7 member (requested: Sam Fiallos) | Whole document | The PR that adds this file | Pending |
-| Team 2 or Team 5 member | §3, §4, §6 (contract change process), §8 (consumer workflow) | The same PR | Pending |
+| Karthik Ganeshan (Team 7) | Whole document, checked against `main`, PR #38 and his #35 branch | [PR #40](https://github.com/samthropic/BASKD/pull/40), Nov 4 | **Approved.** Four non-blocking notes, all applied: split the 5xx row in §4 and answer question 1; a timeout before the write was sent stays 503; `httplib2`'s own resend is a named gap in §8; #35 does not wait for #33 (§6, §11) |
+| Sam Fiallos (Team 7) | Whole document | PR #40, Nov 4 | **Approved.** Two non-blocking notes: this table, applied; a read-only memo link, open as question 6 |
+| Alexander Freedman (Team 2) | §3, §4, §6, §8 | PR #40, Nov 4 | "Looks good"; no changes asked |
+| Leon Liu (Team 2) | §3, §4, §6 (contract change process), §8 (consumer workflow) | PR #40, Nov 4 | Aligns with the shared contract. Two clarifications, both applied: §4 separates our extension-only `400` cases from the contract's `422` for bad parameters; §3 labels zero-duration events as a known difference pending joint agreement. Agreed with Karthik's retry notes |
 
 Substantive comments are answered in the PR with a change or a reason, and the outcome is added
 to the "Concerns raised so far" table. Approval here accepts the plan, not the implementation.
@@ -473,9 +490,9 @@ Owners marked "proposed" have not confirmed yet.
 | Adopt the package; run its suite on fakes and on real Google | Arda | PR #38 merged | Two reviews (dependency and Dockerfile change) | Nov 4 (PR open, live run passed) |
 | Rename the error codes | Arda | PR #36 merged (#31) | Review | Nov 11 |
 | 403 `access_denied` for a denial | Dan (proposed) | #32 | #31 | Nov 11 |
-| `retryable` in every error body | Bryant (proposed) | #33 | #31 | Nov 11 |
+| `retryable` in every error body | Bryant | #33, [PR #41](https://github.com/samthropic/BASKD/pull/41) | #31 | Nov 11 |
 | 400 for a body that is not JSON | Sam (proposed) | #34 | #31 | Nov 11 |
-| 502, not retryable, for an uncertain write; remove the `xfail` | Karthik (proposed) | #35 | #33 | Nov 11 |
+| 502, not retryable, for an uncertain write; remove the `xfail` | Karthik | #35 | Whichever of #35 and PR #38 merges second removes the `xfail` | Nov 11 |
 | Release `v0.2.0` with a fresh-checkout verification | Sam, Bryant or Karthik (coordinator, to choose) | GitHub Release | #31–#35, #37 | Nov 11 |
 | Shared-repo issue for memo question 2; wording PR for question 3 | Arda | Issue and PR on the shared repo | None | Nov 11 |
 | Consumer workflow script, run against the deployed service | To assign | Script in `scripts/` and a recorded run | `v0.2.0`, hosting (question 5) | Nov 11 |
@@ -484,3 +501,5 @@ Owners marked "proposed" have not confirmed yet.
 ## Revision history
 
 - 2026-11-04: first version, for the Milestone 2 review (Arda). Issue #39.
+- 2026-11-04: review comments from Karthik, Sam (Team 7) and Leon (Team 2) applied; review
+  record filled in (Arda).
