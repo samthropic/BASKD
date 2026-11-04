@@ -16,17 +16,19 @@ from tests.conftest import event_payload, failing_client
 
 
 @pytest.mark.parametrize(
-    ("error", "status", "code"),
+    ("error", "status", "code", "retryable"),
     [
-        (EventNotFound("e1"), 404, "not_found"),
-        (InvalidRequest("bad cursor"), 400, "invalid_input"),
-        (ProviderUnavailable("down"), 503, "provider_unavailable"),
-        (ProviderAuthError("denied"), 502, "access_denied"),
-        (ProviderError("weird"), 502, "provider_error"),
-        (CalendarError("unknown"), 500, "calendar_error"),
+        (EventNotFound("e1"), 404, "not_found", False),
+        (InvalidRequest("bad cursor"), 400, "invalid_input", False),
+        (ProviderUnavailable("down"), 503, "provider_unavailable", True),
+        (ProviderAuthError("denied"), 502, "access_denied", False),
+        (ProviderError("weird"), 502, "provider_error", False),
+        (CalendarError("unknown"), 500, "calendar_error", False),
     ],
 )
-def test_domain_errors_map_to_status_and_code(error: CalendarError, status: int, code: str) -> None:
+def test_domain_errors_map_to_status_code_and_retryable(
+    error: CalendarError, status: int, code: str, retryable: bool
+) -> None:
     client = failing_client(error)
     for response in (
         client.get("/events"),
@@ -39,6 +41,7 @@ def test_domain_errors_map_to_status_and_code(error: CalendarError, status: int,
         body = response.json()
         assert body["error"]["code"] == code
         assert body["error"]["message"] == error.message
+        assert body["error"]["retryable"] is retryable
         assert "details" not in body["error"]
 
 
@@ -51,7 +54,7 @@ def test_unexpected_exception_is_generic_500() -> None:
     response = failing_client(RuntimeError("secret internal detail")).get("/events")
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "internal_error", "message": "Internal server error"}
+        "error": {"code": "internal_error", "message": "Internal server error", "retryable": False}
     }
     assert "secret" not in response.text
 
