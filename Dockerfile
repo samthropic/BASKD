@@ -14,6 +14,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# calendar-contract (the package Teams 2, 5 and 7 share) is a git dependency, and uv needs
+# the git command to fetch it. Only the builder installs git; the runtime image stays without it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first (cached unless pyproject.toml / uv.lock change) ...
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \

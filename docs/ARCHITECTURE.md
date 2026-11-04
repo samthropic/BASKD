@@ -43,6 +43,8 @@ flowchart TB
         Google["google.py<br/>GoogleCalendarProvider<br/>only importer of Google SDKs"]
     end
 
+    Contract["contract.py<br/>ContractCalendarService<br/>any provider → shared interface"]
+    Shared[("calendar-contract<br/>shared by Teams 2, 5, 7")]
     SDK[("googleapiclient · google-auth · httplib2")]
     GCal[("Google Calendar API")]
 
@@ -56,6 +58,7 @@ flowchart TB
     Factory --> Memory & Google & Settings & Ports
     Memory --> Models & Errors
     Google --> Models & Errors & Settings & SDK
+    Contract --> Ports & Models & Errors & Shared
     SDK -. HTTPS .-> GCal
 
     classDef core fill:#eef6ff,stroke:#3b82f6;
@@ -68,8 +71,15 @@ flowchart TB
 
 Tests mirror the layers: `tests/unit/test_models.py` (core), `test_memory_provider.py` and
 `test_google_provider.py` (adapters, the latter with a fake SDK), `test_api_events.py` /
-`test_api_errors.py` (HTTP, on the fake provider), `test_settings_and_app.py` (wiring), and
-`tests/integration/` (the real Google round trip, self-skipping without credentials).
+`test_api_errors.py` (HTTP, on the fake provider), `test_settings_and_app.py` (wiring),
+`test_contract_conformance.py` (the shared package's conformance suite, run through
+`contract.py`), and `tests/integration/` (the real Google round trip, self-skipping without
+credentials).
+
+`contract.py` sits beside the HTTP layer, not under it. It wraps a provider in the shared
+`calendar_contract.CalendarService` interface that Teams 2, 5 and 7 agreed on, so the
+package's conformance suite can run against our providers. `api/` never imports it: the HTTP
+API keeps our own models, which carry extensions the shared models forbid.
 
 ## 1. The shape of a request
 
@@ -137,6 +147,7 @@ handler and never calls the provider.
 | `baskd/providers/memory.py` | `InMemoryCalendarProvider`: dict-backed, thread-safe, mirrors Google's overlap/ordering/not-found semantics | models, errors |
 | `baskd/providers/google.py` | `GoogleCalendarProvider` + pure helpers: `event_from_google`, `to_google_body`, `merge_into_resource`, `translate_http_error`, `load_credentials`. **The only module that imports Google SDKs** | models, errors, settings, Google SDKs |
 | `baskd/providers/__init__.py` | `build_provider(settings)`: the single place that knows every implementation | the above |
+| `baskd/contract.py` | `ContractCalendarService`: any `CalendarProvider` behind the shared `calendar_contract.CalendarService` interface. Maps our errors to the five shared codes by class. Reports input our rules reject as `invalid_input`, and provider events the shared model rejects as `provider_error` | ports, models, errors, calendar-contract |
 | `baskd/api/dependencies.py` | `get_provider` / `Provider` alias: the DI seam | ports |
 | `baskd/api/errors.py` | Error envelope models and exception handlers; `STATUS_BY_ERROR` is the one table mapping domain errors to HTTP | errors |
 | `baskd/api/events.py`, `baskd/api/health.py` | Routers | models, dependencies |

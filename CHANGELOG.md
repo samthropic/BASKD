@@ -6,7 +6,20 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- Dependency on the shared `calendar-contract` package of Calendar Teams 2, 5 and 7, pinned
+  to its `v0.1.0-rc.1` git tag, and `baskd/contract.py`, which presents any provider through
+  the package's `CalendarService` interface. No HTTP behaviour changes. — #37
+- The package's conformance suite runs in `make check`
+  (`tests/unit/test_contract_conformance.py`):
+  - create, get, replace and delete run on the in-memory provider;
+  - the shared failures run on the Google provider over a fake SDK;
+  - the check that a create or replace that timed out is not retryable is an expected
+    failure until #35 is fixed.
+
+### Setup and configuration
+- `calendar-contract` is a git dependency, so `uv sync` needs the `git` command. The
+  Docker builder stage now installs git. The runtime image does not include it.
 
 ## [0.1.0] - 2026-10-21
 

@@ -15,6 +15,7 @@ dependencies = [
     "google-auth-httplib2>=0.2",
     "httplib2>=0.22",
     "tzdata>=2025.2",
+    "calendar-contract",
 ]
 
 [dependency-groups]
@@ -36,6 +37,9 @@ packages = ["src/baskd"]
 [tool.uv]
 # The lockfile (uv.lock) pins every dependency exactly; `uv sync --locked` reproduces it.
 package = true
+
+[tool.uv.sources]
+calendar-contract = { git = "https://github.com/Airbus-A330/OSPSD-Calendar", tag = "v0.1.0-rc.1" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
