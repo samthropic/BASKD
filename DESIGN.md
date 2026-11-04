@@ -408,6 +408,7 @@ success, `code` and `retryable`, and it never resends a write that is not retrya
 import time
 import httpx
 
+
 def call(method: str, url: str, body: dict | None = None) -> dict | None:
     for _ in range(3):
         response = httpx.request(method, url, json=body, timeout=15)
@@ -418,6 +419,7 @@ def call(method: str, url: str, body: dict | None = None) -> dict | None:
             raise RuntimeError(f"{response.status_code} {error['code']}: {error['message']}")
         time.sleep(int(response.headers.get("Retry-After", "1")))
     raise RuntimeError("still unavailable after 3 tries")
+
 
 def workflow(base: str) -> None:
     body = {"title": "Team sync", "start": "2026-11-11T15:00:00Z", "end": "2026-11-11T15:30:00Z"}
