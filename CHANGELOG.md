@@ -16,6 +16,8 @@ Release notes on GitHub are built from the matching section here.
   - the shared failures run on the Google provider over a fake SDK;
   - the check that a create or replace that timed out is not retryable is an expected
     failure until #35 is fixed.
+- The same suite's create, get, replace and delete checks run against the real Google
+  Calendar in `make test-integration` (`tests/integration/test_contract_google.py`).
 
 ### Setup and configuration
 - `calendar-contract` is a git dependency, so `uv sync` needs the `git` command. The
