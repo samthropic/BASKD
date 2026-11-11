@@ -58,8 +58,8 @@ SERIES_NOT_REPLACEABLE = (
 class ProviderUnavailable(CalendarError):
     """The provider is temporarily unavailable (timeout, network error, rate limit, 5xx).
 
-    Retryable for reads, ``PUT`` and ``DELETE``. A create that timed out may still have
-    succeeded at the provider, so callers should check before re-sending it.
+    Retryable: the request either never reached the provider or changed nothing. A create
+    or replace whose outcome is unknown is a :class:`ProviderError` instead.
     """
 
     code = "provider_unavailable"
