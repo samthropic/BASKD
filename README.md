@@ -209,9 +209,8 @@ It is published as the Python package
 of our providers through the package's `CalendarService` interface.
 `tests/unit/test_contract_conformance.py` runs the package's conformance suite against it on
 every `make check`. That suite checks the Python interface, not HTTP. The HTTP changes the
-contract asks of us are issues #31 to #35. Until #35 is fixed, a create or replace that
-times out is still reported as retryable. The suite's check for that case is marked as an
-expected failure, and the run will flag it once #35 makes it pass.
+contract asks of us are issues #31 to #35. Every check in the suite passes, including the
+one that a create or replace with an unknown outcome is not retryable (#35).
 
 ## Configuration
 

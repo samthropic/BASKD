@@ -30,8 +30,8 @@ Release notes on GitHub are built from the matching section here.
   (`tests/unit/test_contract_conformance.py`):
   - create, get, replace and delete run on the in-memory provider;
   - the shared failures run on the Google provider over a fake SDK;
-  - the check that a create or replace that timed out is not retryable is an expected
-    failure until #35 is fixed.
+  - every check passes, including that a create or replace with an unknown outcome is not
+    retryable (#35).
 - The same suite's create, get, replace and delete checks run against the real Google
   Calendar in `make test-integration` (`tests/integration/test_contract_google.py`).
 - `infra/`: Terraform for Cloud Run in the `baskd-calendar` project, with state in a

@@ -20,7 +20,6 @@ import pytest
 from calendar_contract import CalendarError as SharedError
 from calendar_contract import CalendarService, CreateEvent, ErrorCode, ReplaceEvent
 from calendar_contract.conformance import (
-    WRITE_OPERATIONS,
     CalendarServiceConformance,
     FailingServiceFactory,
     ProviderFailure,
@@ -44,7 +43,9 @@ from tests.unit.test_google_provider import (
 GOOGLE_FAILURES: dict[ProviderFailure, BaseException] = {
     ProviderFailure.ACCESS_DENIED: http_error(403, "forbidden"),
     ProviderFailure.UNEXPECTED_RESPONSE: http_error(409),
-    ProviderFailure.UNAVAILABLE: http_error(503),
+    # A 429 rather than a 5xx: since #35, a 5xx on insert or update means the write's
+    # outcome is unknown (provider_error), so it cannot stand for "unavailable" on every call.
+    ProviderFailure.UNAVAILABLE: http_error(429, "rateLimitExceeded"),
 }
 
 
@@ -79,16 +80,6 @@ class TestSharedConformance(CalendarServiceConformance):
     @pytest.fixture
     def failing_service(self) -> FailingServiceFactory:
         return google_failing_with
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="#35: a create or replace that times out is still a retryable 503",
-    )
-    @pytest.mark.parametrize("operation", WRITE_OPERATIONS)
-    def test_uncertain_write_raises_non_retryable_provider_error(
-        self, failing_service: FailingServiceFactory, operation: str
-    ) -> None:
-        super().test_uncertain_write_raises_non_retryable_provider_error(failing_service, operation)
 
 
 def create_request(**overrides: Any) -> CreateEvent:
