@@ -162,6 +162,8 @@ locals {
   ]
 }
 
+# The JSON is written the way the Monitoring API returns it (no zero xPos/yPos, targetAxis on
+# each data set, style on the text widget); otherwise every plan shows a diff (rubric 13.2).
 resource "google_monitoring_dashboard" "service" {
   dashboard_json = jsonencode({
     displayName = "BASK'D (${var.environment})"
@@ -169,47 +171,50 @@ resource "google_monitoring_dashboard" "service" {
       columns = 12
       tiles = concat(
         [
-          for i, chart in local.charts : {
-            xPos   = (i % 2) * 6
-            yPos   = floor(i / 2) * 4
-            width  = 6
-            height = 4
-            widget = {
-              title = chart.title
-              xyChart = merge(
-                {
-                  dataSets = [{
-                    plotType = "LINE"
-                    timeSeriesQuery = {
-                      timeSeriesFilter = {
-                        filter = chart.filter
-                        aggregation = merge(
-                          {
-                            alignmentPeriod    = "60s"
-                            perSeriesAligner   = chart.aligner
-                            crossSeriesReducer = chart.reducer
-                          },
-                          length(chart.group_by) > 0 ? { groupByFields = chart.group_by } : {},
-                        )
+          for i, chart in local.charts : merge(
+            (i % 2) == 0 ? {} : { xPos = 6 },
+            floor(i / 2) == 0 ? {} : { yPos = floor(i / 2) * 4 },
+            {
+              width  = 6
+              height = 4
+              widget = {
+                title = chart.title
+                xyChart = merge(
+                  {
+                    dataSets = [{
+                      plotType   = "LINE"
+                      targetAxis = "Y1"
+                      timeSeriesQuery = {
+                        timeSeriesFilter = {
+                          filter = chart.filter
+                          aggregation = merge(
+                            {
+                              alignmentPeriod    = "60s"
+                              perSeriesAligner   = chart.aligner
+                              crossSeriesReducer = chart.reducer
+                            },
+                            length(chart.group_by) > 0 ? { groupByFields = chart.group_by } : {},
+                          )
+                        }
                       }
-                    }
-                  }]
-                },
-                chart.threshold == null ? {} : {
-                  thresholds = [{ value = chart.threshold, label = "concurrency limit" }]
-                },
-              )
-            }
-          }
+                    }]
+                  },
+                  chart.threshold == null ? {} : {
+                    thresholds = [{ value = chart.threshold, label = "concurrency limit" }]
+                  },
+                )
+              }
+            },
+          )
         ],
         [{
-          xPos   = 0
           yPos   = 12
           width  = 12
           height = 3
           widget = {
             title = "From a panel to one request"
             text = {
+              style  = {}
               format = "MARKDOWN"
               content = join("\n", [
                 "1. Spot the operation and error category in the panels above.",

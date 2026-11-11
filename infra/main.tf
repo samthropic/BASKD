@@ -89,12 +89,13 @@ resource "google_cloud_run_v2_service" "api" {
   # Terraform owns the service's configuration; the deploy workflow owns which image runs and
   # where traffic goes. `var.image` only seeds the first revision, so a release does not make
   # the next `terraform plan` want to roll the service back to that image.
+  # template.revision is not ignored: ignoring it made Terraform resend the last deployed
+  # revision's name with a changed template, which Cloud Run rejects (409, #44).
   lifecycle {
     ignore_changes = [
       client,
       client_version,
       traffic,
-      template[0].revision,
       template[0].labels,
       template[0].annotations,
       template[0].containers[0].image,
