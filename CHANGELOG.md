@@ -43,6 +43,10 @@ Release notes on GitHub are built from the matching section here.
   Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
   run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
   `validate`, `test`). (#43)
+- `docs/OPERATIONS.md`: how a stranger operates the deployed service — five questions
+  (what/version/health/logs/rollback), a BASK'D-specific failure runbook, the Terraform
+  resources that matter, monthly cost and teardown date, blast radius of deploy vs runtime
+  identities, and signals → actions for the dashboard panels and SLO alert. (#46)
 - `GET /ready`: readiness, separate from `/health` (liveness). It makes one cheap provider
   call and answers `503` with the error code as `reason` while requests would fail. Probes
   keep using `/health`, so a Google outage cannot cause a restart loop. (#42)

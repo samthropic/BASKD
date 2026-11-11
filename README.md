@@ -37,6 +37,7 @@ Earlier releases: `v0.1.0-alpha.1` (Milestone 1, Oct 7) and `v0.1.0-rc.1` (revie
 | [`docs/FINAL_RELEASE_CHECKLIST.md`](docs/FINAL_RELEASE_CHECKLIST.md) | What the October 21 final release still needs, with owners and draft release notes |
 | [`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md) | Things only a human can do: Google Cloud project, service account key, sharing the test calendar, GitHub secrets, access/permissions |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Running it somewhere other than a laptop (Docker, Cloud Run), configuration and rollback |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Operate the deployed service: five questions, failure runbook, cost, blast radius, signals → actions |
 | [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) | Prioritised backlog after Milestone 1 (Levels 3+, extensions, process) |
 | [`docs/TEAM_AGREEMENT.md`](docs/TEAM_AGREEMENT.md) | How we work together (fill in and accept as a team) |
 | [`AGENTS.md`](AGENTS.md) | Development workflow, review and release process; the "what to touch for a given change" map; the instructions coding agents follow in this repo |
