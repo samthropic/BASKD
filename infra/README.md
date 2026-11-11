@@ -12,11 +12,14 @@ One configuration serves two environments with separate state and separate resou
 
 | Resource | What it is for | What breaks without it |
 | --- | --- | --- |
-| `google_project_service.apis` | Enables Cloud Run, Artifact Registry, Secret Manager and IAM | Nothing else can be created |
+| `google_project_service.apis` | Enables Cloud Run, Artifact Registry, Secret Manager, IAM, Cloud Trace, Logging and Monitoring | Nothing else can be created |
 | `google_artifact_registry_repository.images` | Holds release images, pulled by digest | Cloud Run has no image to run |
 | `google_service_account.runtime` | The identity the container runs as; it can read one secret and nothing else | The service would run as the default compute account, which can edit the whole project |
 | `google_secret_manager_secret.calendar_key` | Holds the Calendar service-account key, mounted as a file at runtime | The app fails at startup: `settings.py` requires a key |
 | `google_cloud_run_v2_service.api` | The API, private by default, scaling 0 to `max_instances` | Nothing to call |
+| `google_project_iam_member.runtime_writes_traces` | Lets the runtime identity write spans to Cloud Trace (`roles/cloudtrace.agent`, write-only) | Requests still work, but no traces: a slow or failed request can't be split into our work and the Google call |
+| `google_logging_metric.requests`, `.request_latency` (`observability.tf`) | Turn the app's per-request log line into traffic, error and latency metrics, by operation | The dashboard has no traffic, error or latency panels |
+| `google_monitoring_dashboard.service` (`observability.tf`) | The Level 3 dashboard (`terraform output dashboard_url`) | Someone has to rebuild the charts by hand in the console |
 | `google_cloud_run_v2_service_iam_member.invokers` | Lets named people call the service | Only project owners can call it |
 | `google_iam_workload_identity_pool_provider.github` (`deploy.tf`) | Lets this repository's `v*` tags (prod) or `staging-*` tags (staging) sign in from GitHub Actions without a stored key | The deploy workflow cannot reach Google |
 | `google_service_account.deploy` (`deploy.tf`) | The identity releases deploy as: push images, roll out revisions, move traffic, call the service for the smoke check. It cannot read the key or change IAM | Releases would need a long-lived key in GitHub, or a person running `gcloud` |

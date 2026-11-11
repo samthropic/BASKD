@@ -253,7 +253,7 @@ def test_calendar_the_service_cannot_see_is_an_access_denial(
     line = next(
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == "baskd.api.failures"
+        if record.name == "baskd.requests"
     )
     assert line["category"] == "access_denied"
     assert line["provider_involved"] is True

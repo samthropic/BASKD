@@ -16,9 +16,16 @@ from typing import Any
 
 import httplib2
 import pytest
+from fastapi.testclient import TestClient
 from google.auth.exceptions import RefreshError, TransportError
 from googleapiclient.errors import HttpError
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import format_trace_id
 
+from baskd.app import create_app
 from baskd.errors import (
     EventNotFound,
     InvalidRequest,
@@ -36,6 +43,8 @@ from baskd.providers.google import (
     to_rfc3339,
     translate_http_error,
 )
+from baskd.settings import Settings
+from baskd.telemetry import configure_telemetry
 from tests.conftest import T0, event_input
 
 CALENDAR_ID = "team-test@group.calendar.google.com"
@@ -77,6 +86,7 @@ class FakeRequest:
     def __init__(self, outcome: Any) -> None:
         self.outcome = outcome
         self.executed_with: dict[str, Any] | None = None
+        self.methodId = "unknown"
 
     def execute(self, http: Any = None, num_retries: int = 0) -> Any:
         self.executed_with = {"http": http, "num_retries": num_retries}
@@ -102,6 +112,7 @@ class FakeEvents:
         if not outcomes:
             raise AssertionError(f"unexpected call to events().{method}({kwargs})")
         request = FakeRequest(outcomes.pop(0))
+        request.methodId = f"calendar.events.{method}"  # as the real HttpRequest has
         self.requests.append(request)
         return request
 
@@ -537,3 +548,57 @@ class TestProviderCalls:
         events.enqueue("list", raised)
         with pytest.raises(expected):
             provider.list_events(ListEventsQuery())
+
+
+# -- traces: the Google call is its own span (rubric Level 3) -------------------------------
+
+
+@pytest.fixture
+def spans() -> Iterator[InMemorySpanExporter]:
+    configure_telemetry(Settings(_env_file=None))  # installs the process's tracer provider
+    exporter = InMemorySpanExporter()
+    tracer_provider = trace.get_tracer_provider()
+    assert isinstance(tracer_provider, TracerProvider)
+    tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
+    yield exporter
+    exporter.shutdown()
+
+
+def test_trace_shows_the_google_call_as_a_child_span(
+    events: FakeEvents, provider: GoogleCalendarProvider, spans: InMemorySpanExporter
+) -> None:
+    events.enqueue("get", http_error(404))
+    client = TestClient(create_app(settings=Settings(_env_file=None), provider=provider))
+    assert client.get("/events/private-id-7").status_code == 404
+
+    google, server = spans.get_finished_spans()
+    assert server.name == "GET /events/{event_id}"
+    assert google.name == "google calendar.events.get"
+    assert google.parent is not None
+    assert google.parent.span_id == server.context.span_id
+    assert google.context.trace_id == server.context.trace_id
+    assert google.attributes is not None
+    assert google.attributes["http.response.status_code"] == 404
+    assert server.status.description == "not_found"
+    # Event ids and the calendar id never reach exported telemetry.
+    exported = repr(
+        [(s.name, s.attributes, s.status.description, s.events) for s in (google, server)]
+    )
+    assert "private-id-7" not in exported
+    assert CALENDAR_ID not in exported
+
+
+def test_server_span_continues_the_callers_trace(
+    events: FakeEvents, provider: GoogleCalendarProvider, spans: InMemorySpanExporter
+) -> None:
+    # Cloud Run forwards a W3C traceparent; our spans join that trace.
+    caller_trace = "4bf92f3577b34da6a3ce929d0e0e4736"
+    events.enqueue("get", GOOGLE_EVENT)
+    client = TestClient(create_app(settings=Settings(_env_file=None), provider=provider))
+    client.get(
+        "/events/abc123def456",
+        headers={"traceparent": f"00-{caller_trace}-00f067aa0ba902b7-01"},
+    )
+    assert {format_trace_id(s.context.trace_id) for s in spans.get_finished_spans()} == {
+        caller_trace
+    }

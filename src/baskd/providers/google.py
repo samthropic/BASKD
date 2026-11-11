@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -35,6 +36,8 @@ from google.oauth2 import service_account
 from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, StatusCode
 
 from baskd.errors import (
     ALL_DAY_NOT_REPLACEABLE,
@@ -50,6 +53,7 @@ from baskd.models import Event, EventInput, EventPage, ListEventsQuery
 from baskd.settings import Settings
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 #: Least-privilege scope: read/write events, no calendar management.
 SCOPES = ("https://www.googleapis.com/auth/calendar.events",)
@@ -179,7 +183,8 @@ class GoogleCalendarProvider:
         """Run one SDK request, translating every failure into the service's own errors."""
         http = AuthorizedHttp(self._credentials, http=httplib2.Http(timeout=self._timeout_seconds))
         try:
-            result = request.execute(http=http, num_retries=0)
+            with _google_call_span(request):
+                result = request.execute(http=http, num_retries=0)
         except HttpError as exc:
             error = translate_http_error(exc, event_id=event_id)
             status = _status_of(exc)
@@ -202,6 +207,33 @@ class GoogleCalendarProvider:
             logger.warning("Google Calendar unreachable: %s", type(exc).__name__)
             raise ProviderUnavailable("The calendar provider could not be reached") from exc
         return result if isinstance(result, dict) else {}
+
+
+@contextmanager
+def _google_call_span(request: Any) -> Iterator[None]:
+    """A child span for one Google call, so a trace shows it apart from our own work.
+
+    The span holds the API method (``calendar.events.insert``) and Google's HTTP status, never
+    the URL or the error text: both contain the calendar id and event ids.
+    """
+    method = getattr(request, "methodId", None) or "unknown"
+    with _tracer.start_as_current_span(
+        f"google {method}",
+        kind=SpanKind.CLIENT,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        span.set_attribute("rpc.system", "google_api")
+        span.set_attribute("rpc.method", method)
+        try:
+            yield
+        except HttpError as exc:
+            span.set_attribute("http.response.status_code", _status_of(exc))
+            span.set_status(StatusCode.ERROR, f"http {_status_of(exc)}")
+            raise
+        except Exception as exc:
+            span.set_status(StatusCode.ERROR, type(exc).__name__)
+            raise
 
 
 # -- translation helpers (pure functions, unit-tested without any network) -----------------
