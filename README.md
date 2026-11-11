@@ -79,6 +79,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | Method & path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
 | `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
+| `GET /ready` | Readiness: can requests succeed right now? Makes one cheap provider call (one event, one field). | `200 {"status":"ready","provider":"google","version":"…"}` | `503 {"status":"not_ready",…,"reason":"<error code>"}` |
 | `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `502`, `503` |
 | `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `502`, `503` |
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `502`, `503` |
@@ -147,8 +148,9 @@ Every non-2xx response has the body
 `{"error": {"code": "<stable_code>", "message": "<human readable>", "retryable": false, "details": [...]}}`.
 `retryable` is always present and says whether repeating the identical request may succeed.
 It is `true` only for `provider_unavailable`; the last column below has the details.
-`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is only present on a
-`422`. Branch on `code` and the status (`invalid_input` is both the 422 and the 400 below);
+`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is present on request
+validation failures (`422`, and `400` for malformed JSON). Branch on `code` and the status
+(`invalid_input` is both the 422 and the 400 below);
 the `message` is for people and may change. Messages are the service's own: provider error
 text is never passed through. The codes are the ones Teams 2, 5 and 7 share in their joint
 Calendar API contract, so a client can branch on them against any of the three services.
@@ -156,7 +158,7 @@ Calendar API contract, so a client can branch on them against any of the three s
 | `code` | HTTP | Kind of failure | When | Retry the same request? |
 | --- | --- | --- | --- | --- |
 | `invalid_input` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
-| `invalid_input` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
+| `invalid_input` | 400 | invalid input | A malformed JSON body, a malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
 | `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
 | `access_denied` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
@@ -167,17 +169,21 @@ Calendar API contract, so a client can branch on them against any of the three s
 A failed operation is never reported as a success, and a request rejected with 4xx before
 reaching the provider (422, cursor 400) has made no change.
 
-**Request ids and failure logs.** Every response carries an `X-Request-ID` header: yours if
+**Request ids and request logs.** Every response carries an `X-Request-ID` header: yours if
 you send a well-formed one (`[A-Za-z0-9._:-]`, ≤ 128 chars), otherwise a fresh id. Each
-failed request writes one JSON log line on the `baskd.api.failures` logger:
+request (except `/health`) writes one JSON log line on the `baskd.requests` logger:
 
 ```json
-{"event": "request_failed", "operation": "get_event", "status": 404, "error": "not_found",
- "category": "not_found", "provider_involved": true, "retryable": false, "method": "GET",
- "route": "/events/{event_id}", "request_id": "6f1c…"}
+{"event": "request_failed", "operation": "get_event", "outcome": "failure", "status": 404,
+ "error": "not_found", "category": "not_found", "provider_involved": true,
+ "retryable": false, "method": "GET", "route": "/events/{event_id}", "request_id": "6f1c…",
+ "latency_ms": 212.4, "release": "0.2.0+1a2b3c4", "trace_id": "4bf9…", "span_id": "00f0…"}
 ```
 
-4xx lines are `WARNING`, 5xx lines `ERROR`; only `internal_error` carries a stack trace.
+A success is `request_succeeded` with `"outcome": "success"` and no error fields. Success
+lines are `INFO`, 4xx `WARNING`, 5xx `ERROR`; only `internal_error` carries a stack trace.
+`trace_id` leads to the request's trace; metrics, traces and the dashboard are described in
+[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 Logs never contain request or response bodies, query strings, event ids (the route
 *template* is logged), headers, credentials or provider error text. The Google adapter adds
 its own line with the provider's HTTP status and `reason` codes for provider failures.
@@ -214,6 +220,9 @@ working directory. `.env.example` documents each one.
 | `BASKD_GOOGLE_CREDENTIALS_JSON` | | Alternative to the file: the key's JSON inline (used by CI) |
 | `BASKD_GOOGLE_TIMEOUT_SECONDS` | `10` | Per-call timeout to Google |
 | `BASKD_LOG_LEVEL` | `INFO` | Level for the service's own loggers |
+| `BASKD_LOG_FORMAT` | `text` | `json` writes Cloud Logging's structured format (set on Cloud Run) |
+| `BASKD_GCP_PROJECT` | | Project that receives traces. Unset: spans are made (log lines keep a trace id) but not exported |
+| `BASKD_COMMIT` | `unknown` | Commit the image was built from; the Dockerfile sets it. Logs report `release` as version + short commit |
 
 The service fails at startup with a readable message when `google` is selected but the
 calendar id or credentials are missing.

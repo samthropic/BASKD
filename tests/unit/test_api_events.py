@@ -30,6 +30,12 @@ def test_health_reports_provider_and_version(client: TestClient) -> None:
     assert response.json() == {"status": "ok", "provider": "memory", "version": __version__}
 
 
+def test_ready_when_the_provider_can_serve(client: TestClient) -> None:
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "provider": "memory", "version": __version__}
+
+
 class TestCreate:
     def test_returns_201_with_location_and_utc_times(self, client: TestClient) -> None:
         response = client.post(
@@ -142,11 +148,25 @@ class TestCreate:
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "invalid_input"
 
-    def test_malformed_json_is_422(self, client: TestClient) -> None:
-        response = client.post(
-            "/events", content=b"{not json", headers={"content-type": "application/json"}
-        )
+    def test_valid_json_missing_required_fields_is_422(self, client: TestClient) -> None:
+        response = client.post("/events", json={"title": "missing times"})
         assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "invalid_input"
+        locations = [detail["loc"] for detail in error["details"]]
+        assert ["body", "start"] in locations
+        assert ["body", "end"] in locations
+
+    @pytest.mark.parametrize(
+        ("method", "url"),
+        [("post", "/events"), ("put", "/events/any-id")],
+    )
+    def test_malformed_json_is_400(self, client: TestClient, method: str, url: str) -> None:
+        response = getattr(client, method)(
+            url, content=b"{not json", headers={"content-type": "application/json"}
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_input"
 
 
 class TestGet:

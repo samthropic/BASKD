@@ -15,6 +15,8 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- Malformed JSON request bodies now return `400 invalid_input` instead of `422`. Valid
+  JSON that fails schema validation is still `422 invalid_input`. (#34)
 - A create or replace that times out, loses its connection or gets a 5xx from Google now
   returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
   `Retry-After`: the write may already have been applied, so re-sending it could create a
@@ -23,6 +25,13 @@ Release notes on GitHub are built from the matching section here.
   the window, for a create) before sending the write again.
 
 ### Added
+- Level 3 telemetry (#44). One JSON log line per request (`request_succeeded` or
+  `request_failed`) with operation, outcome, status, latency, release and trace id; on Cloud
+  Run it is in Cloud Logging's format and links to its trace. Traces go to Cloud Trace: a
+  server span per request and a child span per Google call. Terraform adds log-based traffic,
+  error and latency metrics and a dashboard (`infra/observability.tf`). New settings
+  `BASKD_LOG_FORMAT`, `BASKD_GCP_PROJECT`, `BASKD_COMMIT`. FastAPI's built-in telemetry is
+  off: it records raw paths. See `docs/OBSERVABILITY.md`.
 - `infra/`: Terraform for Cloud Run in the `baskd-calendar` project, with state in a
   versioned GCS bucket, the Calendar key in Secret Manager, a runtime identity that can only
   read that key, images pinned by digest, and separate `prod` and `staging` environments.
@@ -38,6 +47,9 @@ Release notes on GitHub are built from the matching section here.
   (what/version/health/logs/rollback), a BASK'D-specific failure runbook, the Terraform
   resources that matter, monthly cost and teardown date, blast radius of deploy vs runtime
   identities, and signals → actions for the dashboard panels and SLO alert. (#46)
+- `GET /ready`: readiness, separate from `/health` (liveness). It makes one cheap provider
+  call and answers `503` with the error code as `reason` while requests would fail. Probes
+  keep using `/health`, so a Google outage cannot cause a restart loop. (#42)
 
 ## [0.1.0] - 2026-10-21
 
