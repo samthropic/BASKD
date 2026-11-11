@@ -417,6 +417,35 @@ class TestProviderCalls:
         with pytest.raises(InvalidRequest):
             provider.list_events(ListEventsQuery(cursor="garbage"))
 
+    def test_ready_check_reads_one_event_field(
+        self, provider: GoogleCalendarProvider, events: FakeEvents
+    ) -> None:
+        events.enqueue("list", {"kind": "calendar#events"})
+        provider.check_ready()
+        assert events.calls == [
+            ("list", {"calendarId": CALENDAR_ID, "maxResults": 1, "fields": "kind"})
+        ]
+
+    @pytest.mark.parametrize(
+        ("outcome", "expected"),
+        [
+            (http_error(404), ProviderAuthError),  # calendar no longer shared with the key
+            (http_error(403, "forbidden"), ProviderAuthError),
+            (http_error(503), ProviderUnavailable),
+            (TimeoutError("timed out"), ProviderUnavailable),
+        ],
+    )
+    def test_ready_check_reports_why_it_is_not_ready(
+        self,
+        provider: GoogleCalendarProvider,
+        events: FakeEvents,
+        outcome: BaseException,
+        expected: type[Exception],
+    ) -> None:
+        events.enqueue("list", outcome)
+        with pytest.raises(expected):
+            provider.check_ready()
+
     def test_replace_fetches_then_updates_full_resource(
         self, provider: GoogleCalendarProvider, events: FakeEvents
     ) -> None:

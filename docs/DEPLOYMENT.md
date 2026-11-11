@@ -18,8 +18,14 @@ directory). See the README table. Two of them are secrets:
   only inject environment variables.
 - `BASKD_GOOGLE_CALENDAR_ID` is not secret but is environment-specific.
 
-Health check: `GET /health` returns 200 and names the active provider. It does not call
-Google, so it is safe for aggressive probing.
+Health checks:
+
+- `GET /health` (liveness) returns 200 and names the active provider. It does not call
+  Google, so it is safe for aggressive probing, and Cloud Run's startup and liveness probes
+  use it: a Google outage cannot make the platform restart healthy instances in a loop.
+- `GET /ready` (readiness) makes one cheap Google call and returns 503 with the error code
+  as `reason` while requests would fail (Google down, key revoked, calendar not shared).
+  Use it to ask "would a request work right now?"; nothing restarts the service on it.
 
 The process is stateless when `BASKD_PROVIDER=google` (all state lives in the calendar), so
 it can be restarted, scaled horizontally, or replaced at will. With `memory` it holds state in

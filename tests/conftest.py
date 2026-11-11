@@ -92,6 +92,9 @@ class FailingProvider:
     def delete_event(self, event_id: str) -> None:
         raise self.error
 
+    def check_ready(self) -> None:
+        raise self.error
+
 
 def failing_client(error: Exception) -> TestClient:
     settings = Settings(provider="memory", _env_file=None)

@@ -64,3 +64,11 @@ class CalendarProvider(Protocol):
     def delete_event(self, event_id: str) -> None:
         """Delete an event or raise :class:`~baskd.errors.EventNotFound`."""
         ...
+
+    def check_ready(self) -> None:
+        """Return if the provider can serve requests now; otherwise raise a domain error.
+
+        Backs ``GET /ready``. It may call the provider (one cheap read), so it is not used
+        for liveness: ``GET /health`` never calls it.
+        """
+        ...
