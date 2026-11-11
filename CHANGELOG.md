@@ -15,6 +15,8 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- Malformed JSON request bodies now return `400 invalid_input` instead of `422`. Valid
+  JSON that fails schema validation is still `422 invalid_input`. (#34)
 - `access_denied` (the provider refused the service: bad or revoked key, calendar not
   shared) is now `403` instead of `502` (joint contract rule 9). The code, message and
   `retryable: false` are unchanged. Clients that branch on the status must update. (#32)

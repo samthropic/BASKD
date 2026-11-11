@@ -158,16 +158,27 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
 
+def _is_malformed_json(errors: Sequence[Any]) -> bool:
+    """True when the body is not JSON at all (as opposed to JSON that fails the schema)."""
+    return any(err.get("type") == "json_invalid" for err in errors)
+
+
 def _validation_failed(request: Request, errors: Sequence[Any]) -> JSONResponse:
+    # Malformed JSON is 400; schema / type failures on otherwise valid JSON stay 422.
+    status_code = (
+        status.HTTP_400_BAD_REQUEST
+        if _is_malformed_json(errors)
+        else status.HTTP_422_UNPROCESSABLE_CONTENT
+    )
     log_failure(
         request,
-        status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status=status_code,
         error="invalid_input",
         category="invalid_input",
         retryable=False,
     )
     return error_response(
-        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status_code,
         "invalid_input",
         "Request validation failed",
         details=_validation_details(errors),

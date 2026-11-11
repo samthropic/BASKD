@@ -147,8 +147,9 @@ Every non-2xx response has the body
 `{"error": {"code": "<stable_code>", "message": "<human readable>", "retryable": false, "details": [...]}}`.
 `retryable` is always present and says whether repeating the identical request may succeed.
 It is `true` only for `provider_unavailable`; the last column below has the details.
-`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is only present on a
-`422`. Branch on `code` and the status (`invalid_input` is both the 422 and the 400 below);
+`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is present on request
+validation failures (`422`, and `400` for malformed JSON). Branch on `code` and the status
+(`invalid_input` is both the 422 and the 400 below);
 the `message` is for people and may change. Messages are the service's own: provider error
 text is never passed through. The codes are the ones Teams 2, 5 and 7 share in their joint
 Calendar API contract, so a client can branch on them against any of the three services.
@@ -156,7 +157,7 @@ Calendar API contract, so a client can branch on them against any of the three s
 | `code` | HTTP | Kind of failure | When | Retry the same request? |
 | --- | --- | --- | --- | --- |
 | `invalid_input` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
-| `invalid_input` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
+| `invalid_input` | 400 | invalid input | A malformed JSON body, a malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
 | `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
 | `access_denied` | 403 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
