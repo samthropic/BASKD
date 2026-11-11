@@ -18,6 +18,8 @@ One configuration serves two environments with separate state and separate resou
 | `google_secret_manager_secret.calendar_key` | Holds the Calendar service-account key, mounted as a file at runtime | The app fails at startup: `settings.py` requires a key |
 | `google_cloud_run_v2_service.api` | The API, private by default, scaling 0 to `max_instances` | Nothing to call |
 | `google_cloud_run_v2_service_iam_member.invokers` | Lets named people call the service | Only project owners can call it |
+| `google_iam_workload_identity_pool_provider.github` (`deploy.tf`) | Lets this repository's `v*` tags (prod) or `staging-*` tags (staging) sign in from GitHub Actions without a stored key | The deploy workflow cannot reach Google |
+| `google_service_account.deploy` (`deploy.tf`) | The identity releases deploy as: push images, roll out revisions, move traffic, call the service for the smoke check. It cannot read the key or change IAM | Releases would need a long-lived key in GitHub, or a person running `gcloud` |
 
 The key itself is **not** in Terraform: Terraform creates an empty secret, and step 2 adds the
 key with `gcloud`. So the key never appears in the Terraform state, the repository or CI output.
@@ -119,6 +121,21 @@ terraform plan -var-file=prod.tfvars
 ```
 
 It should end with `No changes. Your infrastructure matches the configuration.`
+
+## Releases after the first one
+
+Step 3 only seeds the first revision. After that, releases go through
+`.github/workflows/deploy.yml` (`docs/DEPLOYMENT.md` §5): push a `v*` tag for prod or a
+`staging-*` tag for staging. Terraform ignores which image is running and how traffic is
+split, so `terraform plan` stays clean after a release. Keep `image` in your `.tfvars` as it
+is; it is only used when the service is first created.
+
+The workflow's provider and identity are fixed names derived from the environment, and match
+these outputs:
+
+```bash
+terraform output workload_identity_provider deploy_service_account
+```
 
 ## The staging environment
 

@@ -21,6 +21,13 @@ Release notes on GitHub are built from the matching section here.
   versioned GCS bucket, the Calendar key in Secret Manager, a runtime identity that can only
   read that key, images pinned by digest, and separate `prod` and `staging` environments.
   `infra/README.md` covers setup, calling the API and teardown. (#42)
+- Deploy pipeline (`.github/workflows/deploy.yml`): a `v*` tag builds the image once, deploys
+  it to Cloud Run by digest as a no-traffic candidate, smoke-checks it against the real
+  calendar (`scripts/smoke.py`: create, get, replace, delete), and only then moves traffic.
+  A failure sends traffic back to the previous revision. GitHub signs in with Workload
+  Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
+  run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
+  `validate`, `test`). (#43)
 
 ## [0.1.0] - 2026-10-21
 

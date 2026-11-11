@@ -27,7 +27,7 @@ variable "calendar_id" {
 }
 
 variable "image" {
-  description = "Container image to run, pinned by digest (REGION-docker.pkg.dev/PROJECT/REPO/baskd@sha256:...). Leave null on the first apply: the service is created once an image exists."
+  description = "First image to run, pinned by digest (REGION-docker.pkg.dev/PROJECT/REPO/baskd@sha256:...). Leave null on the first apply: the service is created once an image exists. Later releases are rolled out by .github/workflows/deploy.yml, and Terraform ignores the running image."
   type        = string
   default     = null
 
@@ -59,4 +59,16 @@ variable "google_timeout_seconds" {
   description = "BASKD_GOOGLE_TIMEOUT_SECONDS: how long the service waits for one Google call."
   type        = number
   default     = 10
+}
+
+variable "github_repository" {
+  description = "owner/name of the GitHub repository whose tag pushes may deploy."
+  type        = string
+  default     = "samthropic/BASKD"
+}
+
+variable "github_repository_id" {
+  description = "Numeric id of that repository (gh api repos/OWNER/NAME --jq .id). The deploy identity trusts the id, so a re-created repository with the same name gets no access."
+  type        = string
+  default     = "1373519725"
 }
