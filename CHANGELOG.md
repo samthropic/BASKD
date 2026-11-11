@@ -16,6 +16,12 @@ Release notes on GitHub are built from the matching section here.
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
 
+### Added
+- `infra/`: Terraform for Cloud Run in the `baskd-calendar` project, with state in a
+  versioned GCS bucket, the Calendar key in Secret Manager, a runtime identity that can only
+  read that key, images pinned by digest, and separate `prod` and `staging` environments.
+  `infra/README.md` covers setup, calling the API and teardown. (#42)
+
 ## [0.1.0] - 2026-10-21
 
 Final release (spec Level 5 plus review feedback). Tag `v0.1.0`.
