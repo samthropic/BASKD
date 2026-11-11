@@ -16,6 +16,10 @@ Provider facts that shape this module (each is reflected in the public API or do
   API. Neither can a recurring *series*; single occurrences can be replaced.
 * A service account cannot invite attendees without domain-wide delegation, so the API
   does not expose attendees at all.
+* A create or replace that times out, or that Google answers with a 5xx, may still have
+  been applied. It is reported as :class:`~baskd.errors.ProviderError` (outcome unknown,
+  not retryable) rather than as a temporary outage, so callers do not re-send a write that
+  may already have happened. Failures before the request reached Google stay retryable.
 * ``googleapiclient``'s HTTP transport is not thread-safe, so every call gets its own
   ``AuthorizedHttp`` with an explicit timeout.
 """
@@ -59,6 +63,18 @@ _QUOTA_REASONS = frozenset(
 )
 _TRANSIENT_STATUSES = frozenset({429, 500, 502, 503, 504})
 _GONE_STATUSES = frozenset({404, 410})
+#: 5xx answers to a write do not say whether the write was applied (429 means it was not).
+_WRITE_UNKNOWN_STATUSES = frozenset({500, 502, 503, 504})
+#: Transport failures that mean the write was not applied: the token refresh failed
+#: (``TransportError``; raised before sending, or after Google answered 401) or the DNS
+#: lookup failed. A refused connection is not listed: httplib2 reconnects and re-sends once
+#: when a connection closes without an answer, so it can follow a request that was sent.
+_NOT_SENT_ERRORS = (TransportError, httplib2.ServerNotFoundError)
+#: Public message for a write whose outcome is unknown (contract rule 6).
+WRITE_OUTCOME_UNKNOWN = (
+    "The calendar provider did not confirm the change; it may or may not have been applied. "
+    "Read the event or list the window before sending it again"
+)
 
 
 def load_credentials(settings: Settings) -> Any:
@@ -122,7 +138,7 @@ class GoogleCalendarProvider:
 
     def create_event(self, data: EventInput) -> Event:
         request = self._events().insert(calendarId=self._calendar_id, body=to_google_body(data))
-        return event_from_google(self._execute(request))
+        return event_from_google(self._execute(request, write=True))
 
     def get_event(self, event_id: str) -> Event:
         return event_from_google(self._fetch_live(event_id))
@@ -157,7 +173,7 @@ class GoogleCalendarProvider:
         request = self._events().update(
             calendarId=self._calendar_id, eventId=event_id, body=merge_into_resource(current, data)
         )
-        return event_from_google(self._execute(request, event_id=event_id))
+        return event_from_google(self._execute(request, event_id=event_id, write=True))
 
     def delete_event(self, event_id: str) -> None:
         request = self._events().delete(calendarId=self._calendar_id, eventId=event_id)
@@ -175,13 +191,20 @@ class GoogleCalendarProvider:
             raise EventNotFound(event_id)
         return resource
 
-    def _execute(self, request: Any, *, event_id: str | None = None) -> dict[str, Any]:
-        """Run one SDK request, translating every failure into the service's own errors."""
+    def _execute(
+        self, request: Any, *, event_id: str | None = None, write: bool = False
+    ) -> dict[str, Any]:
+        """Run one SDK request, translating every failure into the service's own errors.
+
+        ``write`` marks a create or replace: when such a request may have reached Google
+        but got no clear answer, the outcome is unknown and is not reported as retryable.
+        A delete is not a write here, because repeating it is safe (a second delete is 404).
+        """
         http = AuthorizedHttp(self._credentials, http=httplib2.Http(timeout=self._timeout_seconds))
         try:
             result = request.execute(http=http, num_retries=0)
         except HttpError as exc:
-            error = translate_http_error(exc, event_id=event_id)
+            error = translate_http_error(exc, event_id=event_id, write=write)
             status = _status_of(exc)
             # A missing event is an ordinary outcome; everything else deserves attention.
             logger.log(
@@ -199,7 +222,9 @@ class GoogleCalendarProvider:
                 "The calendar provider rejected the service's credentials"
             ) from exc
         except (TransportError, httplib2.HttpLib2Error, OSError) as exc:
-            logger.warning("Google Calendar unreachable: %s", type(exc).__name__)
+            logger.warning("Google Calendar call got no answer: %s", type(exc).__name__)
+            if write and not isinstance(exc, _NOT_SENT_ERRORS):
+                raise ProviderError(WRITE_OUTCOME_UNKNOWN) from exc
             raise ProviderUnavailable("The calendar provider could not be reached") from exc
         return result if isinstance(result, dict) else {}
 
@@ -207,13 +232,16 @@ class GoogleCalendarProvider:
 # -- translation helpers (pure functions, unit-tested without any network) -----------------
 
 
-def translate_http_error(exc: HttpError, *, event_id: str | None = None) -> CalendarError:
+def translate_http_error(
+    exc: HttpError, *, event_id: str | None = None, write: bool = False
+) -> CalendarError:
     """Map an SDK ``HttpError`` to the provider-neutral error hierarchy.
 
     ``event_id`` tells us whether a 404 refers to an event (-> not found) or to the
     calendar itself (-> misconfiguration / permissions). Messages are our own: Google's
     error text is not copied into the public contract, and the provider's status and
-    ``reason`` codes are only logged (by ``_execute``).
+    ``reason`` codes are only logged (by ``_execute``). ``write`` marks a create or
+    replace, for which a 5xx leaves the outcome unknown.
     """
     status = _status_of(exc)
     if status in _GONE_STATUSES:
@@ -228,6 +256,8 @@ def translate_http_error(exc: HttpError, *, event_id: str | None = None) -> Cale
         if _error_reasons(exc) & _QUOTA_REASONS:
             return ProviderUnavailable("The calendar provider's quota is exhausted; retry later")
         return ProviderAuthError("The calendar provider denied access to the calendar")
+    if write and status in _WRITE_UNKNOWN_STATUSES:
+        return ProviderError(WRITE_OUTCOME_UNKNOWN)
     if status in _TRANSIENT_STATUSES:
         return ProviderUnavailable("The calendar provider is temporarily unavailable")
     return ProviderError("The calendar provider returned an unexpected response")

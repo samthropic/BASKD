@@ -221,9 +221,9 @@ globals.
 | --- | --- | --- | --- |
 | `EventNotFound` | `not_found` | 404 | get/replace/delete of an unknown or deleted id |
 | `InvalidRequest` | `invalid_input` | 400 | the provider rejected something we could not validate up front (bad cursor, a Google 400) |
-| `ProviderUnavailable` | `provider_unavailable` | 503 + `Retry-After: 5` | timeout, network error, 429, 5xx, quota |
+| `ProviderUnavailable` | `provider_unavailable` | 503 + `Retry-After: 5` | timeout, network error, 5xx on a read or delete; 429, quota; a write that never reached Google |
 | `ProviderAuthError` | `access_denied` | 502 | 401/403, bad key, calendar not shared |
-| `ProviderError` | `provider_error` | 502 | anything else from the provider |
+| `ProviderError` | `provider_error` | 502 | a create/replace with an unknown outcome (timeout, reset, 5xx); anything else from the provider |
 | (FastAPI validation) | `invalid_input` | 422 | invalid body/query/path |
 | (Starlette `HTTPException`) | `http_error` | as raised | unknown routes, method not allowed |
 | (anything else) | `internal_error` | 500 | bug; logged with traceback, message is generic |
@@ -241,10 +241,12 @@ flowchart LR
     S -->|"401"| AUTH
     S -->|"403 with quota reason"| UNAV["ProviderUnavailable<br/>503 provider_unavailable + Retry-After"]
     S -->|"403 otherwise"| AUTH
-    S -->|"429 / 500 / 502 / 503 / 504"| UNAV
+    S -->|"429; 5xx on a read or delete"| UNAV
+    S -->|"5xx on a create or replace"| PE
     S -->|"anything else"| PE["ProviderError<br/>502 provider_error"]
     RE["RefreshError (key rejected)"] --> AUTH
-    NET["TransportError · HttpLib2Error · OSError<br/>(DNS, timeout, reset)"] --> UNAV
+    NET["TransportError · HttpLib2Error · OSError<br/>(DNS, timeout, reset)"] -->|"read, delete, or<br/>write never sent"| UNAV
+    NET -->|"create / replace sent,<br/>no answer"| PE
     CANC["GET returned status: cancelled"] --> NF
 ```
 
