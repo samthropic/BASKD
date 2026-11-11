@@ -30,6 +30,12 @@ def test_health_reports_provider_and_version(client: TestClient) -> None:
     assert response.json() == {"status": "ok", "provider": "memory", "version": __version__}
 
 
+def test_ready_when_the_provider_can_serve(client: TestClient) -> None:
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "provider": "memory", "version": __version__}
+
+
 class TestCreate:
     def test_returns_201_with_location_and_utc_times(self, client: TestClient) -> None:
         response = client.post(

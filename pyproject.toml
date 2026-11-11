@@ -16,6 +16,9 @@ dependencies = [
     "httplib2>=0.22",
     "tzdata>=2025.2",
     "calendar-contract",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-gcp-trace>=1.7",
 ]
 
 [dependency-groups]

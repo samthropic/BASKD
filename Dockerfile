@@ -40,9 +40,14 @@ RUN groupadd --system app && useradd --system --gid app --create-home app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 
+# The commit this image was built from; logs and traces report it as part of the release.
+# deploy.yml passes it; a local build says "unknown".
+ARG BASKD_COMMIT=unknown
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8000 \
+    BASKD_COMMIT=$BASKD_COMMIT
 
 USER app
 EXPOSE 8000
@@ -50,5 +55,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ.get('PORT', '8000') + '/health', timeout=2).status == 200 else 1)"
 
-# Shell form so platforms that inject $PORT (Cloud Run, Render, ...) are honoured.
-CMD ["sh", "-c", "exec uvicorn baskd.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+# Shell form so platforms that inject $PORT (Cloud Run, Render, ...) are honoured. No access
+# log: the app writes one structured line per request (api/request_log.py).
+CMD ["sh", "-c", "exec uvicorn baskd.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --no-access-log"]

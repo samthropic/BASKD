@@ -116,3 +116,34 @@ run "staging_deploys_only_from_staging_tags" {
     error_message = "staging must have its own deploy identity."
   }
 }
+
+run "telemetry_is_wired_and_metric_labels_stay_bounded" {
+  command = plan
+
+  variables {
+    image = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+
+  assert {
+    condition = alltrue([
+      for wanted in ["BASKD_LOG_FORMAT=json", "BASKD_GCP_PROJECT=baskd-calendar"] : contains(
+        [for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : "${e.name}=${e.value}"],
+        wanted,
+      )
+    ])
+    error_message = "Cloud Run must write Cloud Logging JSON and export traces to the project."
+  }
+
+  assert {
+    condition     = google_project_iam_member.runtime_writes_traces.role == "roles/cloudtrace.agent"
+    error_message = "The runtime identity may only write traces, not read or administer them."
+  }
+
+  assert {
+    condition = length(setintersection(
+      keys(merge(google_logging_metric.requests.label_extractors, google_logging_metric.request_latency.label_extractors)),
+      ["request_id", "trace_id", "route", "event_id"],
+    )) == 0
+    error_message = "Metric labels must stay bounded: no ids or paths."
+  }
+}

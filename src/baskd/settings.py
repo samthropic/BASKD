@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProviderName = Literal["memory", "google"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+LogFormat = Literal["text", "json"]
 
 
 class Settings(BaseSettings):
@@ -34,9 +35,19 @@ class Settings(BaseSettings):
     google_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
 
     log_level: LogLevel = "INFO"
+    #: ``json`` writes Cloud Logging's structured format (set on Cloud Run by Terraform).
+    log_format: LogFormat = "text"
+    #: Google Cloud project that receives traces. Unset: spans are made but not exported.
+    gcp_project: str | None = None
+    #: Commit the image was built from (the Dockerfile bakes it in); part of the release.
+    commit: str = "unknown"
 
     @field_validator(
-        "google_credentials_file", "google_credentials_json", "google_calendar_id", mode="before"
+        "google_credentials_file",
+        "google_credentials_json",
+        "google_calendar_id",
+        "gcp_project",
+        mode="before",
     )
     @classmethod
     def _blank_means_unset(cls, value: Any) -> Any:

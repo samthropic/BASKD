@@ -1,6 +1,7 @@
 """Level 5: every failure reaches the caller as the documented error and leaves one log line.
 
-Each test checks the public response first, then the ``request_failed`` line: operation,
+Every request leaves one line (``api/request_log.py``). Each test here checks the public
+response first, then the ``request_failed`` line: operation,
 error category, whether the provider was involved, status and request id (spec 5.5).
 Failures are produced deterministically with the in-memory provider or ``FailingProvider``.
 """
@@ -35,12 +36,21 @@ def failure_log(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptureF
         yield caplog
 
 
+#: Fields that differ on every request; ``test_every_request_logs_one_line`` checks them.
+VARYING = ("outcome", "latency_ms", "release", "trace_id", "span_id")
+
+
+def lines(caplog: pytest.LogCaptureFixture) -> list[dict[str, Any]]:
+    return [json.loads(r.getMessage()) for r in caplog.records if r.name == "baskd.requests"]
+
+
 def failures(caplog: pytest.LogCaptureFixture) -> list[dict[str, Any]]:
-    return [
-        json.loads(record.getMessage())
-        for record in caplog.records
-        if record.name == "baskd.api.failures"
-    ]
+    found = [line for line in lines(caplog) if line["event"] == "request_failed"]
+    for line in found:
+        assert line["outcome"] == "failure"
+        for key in VARYING:
+            del line[key]
+    return found
 
 
 def only_failure(caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
@@ -59,6 +69,22 @@ def test_success_logs_no_failure_and_carries_a_request_id(
     assert response.status_code == 201
     assert GENERATED_ID.fullmatch(response.headers["X-Request-ID"])
     assert failures(failure_log) == []
+
+
+def test_every_request_logs_one_line(
+    client: TestClient, failure_log: pytest.LogCaptureFixture
+) -> None:
+    response = client.post("/events", json=event_payload())
+    client.get("/health")  # probes are not logged
+    [line] = lines(failure_log)
+    assert line["event"] == "request_succeeded"
+    assert (line["operation"], line["outcome"], line["status"]) == ("create_event", "success", 201)
+    assert line["request_id"] == response.headers["X-Request-ID"]
+    assert line["release"].endswith("+unknown")  # BASKD_COMMIT is only set in the image
+    assert isinstance(line["latency_ms"], float)
+    assert re.fullmatch(r"[0-9a-f]{32}", line["trace_id"])
+    assert "error" not in line
+    assert failure_log.records[-1].levelno == logging.INFO
 
 
 def test_invalid_input_never_reaches_the_provider(
@@ -107,7 +133,7 @@ def test_provider_failure_is_503_retryable_and_logged_as_error(
     assert line["category"] == "provider_failure"
     assert line["provider_involved"] is True
     assert line["retryable"] is True
-    record = next(r for r in failure_log.records if r.name == "baskd.api.failures")
+    record = next(r for r in failure_log.records if r.name == "baskd.requests")
     assert record.levelno == logging.ERROR
     assert record.exc_info is None  # an expected failure: no stack trace
 
@@ -189,7 +215,7 @@ def test_bug_is_a_generic_500_with_a_logged_traceback(
     }
     assert "secret" not in response.text
     assert GENERATED_ID.fullmatch(response.headers["X-Request-ID"])
-    record = next(r for r in failure_log.records if r.name == "baskd.api.failures")
+    record = next(r for r in failure_log.records if r.name == "baskd.requests")
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None
     assert json.loads(record.getMessage())["category"] == "internal"

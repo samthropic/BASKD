@@ -25,7 +25,7 @@ flowchart TB
 
     subgraph HTTP["HTTP layer · src/baskd/api/"]
         Events["events.py<br/>POST/GET/PUT/DELETE /events"]
-        Health["health.py<br/>GET /health"]
+        Health["health.py<br/>GET /health · GET /ready"]
         Deps["dependencies.py<br/>get_provider() → Provider"]
         ApiErr["errors.py<br/>envelope + exception handlers"]
     end
@@ -134,7 +134,8 @@ In words:
 
 The other endpoints follow the same path; only the provider method differs
 (`get_event`, `list_events`, `replace_event`, `delete_event`). `GET /health` stops at the
-handler and never calls the provider.
+handler and never calls the provider; `GET /ready` calls `provider.check_ready()` (one
+cheap read) and answers 503 with the error code when it raises.
 
 ## 2. Modules
 
@@ -151,7 +152,8 @@ handler and never calls the provider.
 | `baskd/api/dependencies.py` | `get_provider` / `Provider` alias: the DI seam | ports |
 | `baskd/api/errors.py` | Error envelope models and exception handlers; `STATUS_BY_ERROR` is the one table mapping domain errors to HTTP | errors |
 | `baskd/api/events.py`, `baskd/api/health.py` | Routers | models, dependencies |
-| `baskd/app.py` | `create_app(settings=None, provider=None)`: wiring, logging, lifespan log line | everything above |
+| `baskd/app.py` | `create_app(settings=None, provider=None)`: wiring, lifespan log line | everything above |
+| `baskd/telemetry.py` | Log format (text, or Cloud Logging JSON linked to traces) and the tracer, set up once per process; `release_of` | `settings` |
 | `baskd/__main__.py` | `python -m baskd` → uvicorn | app |
 
 Rule of thumb: arrows point inward (api → ports/models/errors ← providers). If you find
@@ -256,9 +258,10 @@ status and `reason` codes. Each error class also carries a `category` (`invalid_
 `not_found`, `access_denied`, `provider_failure`, `internal`) and a `retryable` flag; the
 README's error table is the public version of both.
 
-Every failed request writes one JSON `request_failed` line (`api/failure_log.py`) with the
+Every request writes one JSON line (`api/request_log.py`): `request_failed` with the
 operation, error code and category, HTTP status, whether the provider was called, and the
-`X-Request-ID`. "Provider was called" is recorded by the thin wrapper `get_provider` hands to
+`X-Request-ID`, or `request_succeeded` without the error fields. Both carry latency, release
+and trace id; the error handlers only record the failure, and the middleware writes the line. "Provider was called" is recorded by the thin wrapper `get_provider` hands to
 routes (`api/dependencies.py`), so a 422 or a rejected cursor is logged as never having
 reached the provider.
 

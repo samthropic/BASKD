@@ -65,6 +65,12 @@ def test_health_reports_google(client: TestClient) -> None:
     assert body["provider"] == "google"
 
 
+def test_ready_reaches_the_real_calendar(client: TestClient) -> None:
+    response = client.get("/ready")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "ready"
+
+
 def test_create_get_list_replace_delete(client: TestClient, cleanup: list[str]) -> None:
     marker = uuid4().hex
     # Far enough in the future that human-created events on the test calendar never collide.
@@ -253,7 +259,7 @@ def test_calendar_the_service_cannot_see_is_an_access_denial(
     line = next(
         json.loads(record.getMessage())
         for record in caplog.records
-        if record.name == "baskd.api.failures"
+        if record.name == "baskd.requests"
     )
     assert line["category"] == "access_denied"
     assert line["provider_involved"] is True
