@@ -6,6 +6,14 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-11-11
+
+HW2 Milestone 3: the shared Calendar contract with Teams 2 and 5, and the service running on
+Cloud Run behind a deploy pipeline, telemetry and SLOs. Tag `v0.2.0`. The contract changes
+below are breaking for clients that branch on error codes or statuses (AGENTS.md §5).
+
 ### Breaking changes
 - Error codes renamed to the names Teams 2, 5 and 7 share in their joint Calendar API
   contract: `validation_error` and `invalid_request` → `invalid_input` (still `422` and
@@ -72,6 +80,17 @@ Release notes on GitHub are built from the matching section here.
 ### Setup and configuration
 - `calendar-contract` is a git dependency, so `uv sync` needs the `git` command. The
   Docker builder stage now installs git. The runtime image does not include it.
+
+### Known limitations
+- A create that times out returns no `id`, and listing is not part of the shared contract, so
+  the shared core gives a client no way to check whether the event was created. BASK'D clients
+  can list the window (shared memo question 2, still open).
+- `httplib2` resends a request once on its own if the connection drops before a status line
+  arrives, whatever `num_retries` is (`TESTING.md`, `DESIGN.md` §8).
+- The shared package is still pinned to `v0.1.0-rc.1`. The shared HTTP conformance suite is not
+  in that tag, so it runs in our CI only after the shared stable release.
+- A Google event that ends when it starts is readable over HTTP but is `provider_error` through
+  the shared Python interface (shared memo question 3, still open).
 
 ## [0.1.0] - 2026-10-21
 
@@ -175,7 +194,8 @@ First working version (spec Levels 1–2, Milestone 1). Tag `v0.1.0-alpha.1`, co
   turned an all-day event into a timed one, and a series failed with Google's own "Missing
   time zone definition" error. Single occurrences of a recurring event can still be replaced.
 
-[Unreleased]: https://github.com/samthropic/BASKD/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/samthropic/BASKD/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/samthropic/BASKD/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/samthropic/BASKD/compare/v0.1.0-rc.1...v0.1.0
 [0.1.0-rc.1]: https://github.com/samthropic/BASKD/compare/v0.1.0-alpha.1...v0.1.0-rc.1
 [0.1.0-alpha.1]: https://github.com/samthropic/BASKD/releases/tag/v0.1.0-alpha.1
