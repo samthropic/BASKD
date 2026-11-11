@@ -45,6 +45,10 @@ jobs:
         run: uv run ruff format --check .
       - name: Static types
         run: uv run mypy
+      - name: Shared conformance suite (calendar-contract, Teams 2, 5 and 7)
+        # Listed on its own so a run shows each shared check's result. It also runs in the
+        # unit tests below.
+        run: uv run pytest tests/unit/test_contract_conformance.py -v --no-header -p no:cacheprovider
       - name: Unit tests
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
       - name: Upload coverage report

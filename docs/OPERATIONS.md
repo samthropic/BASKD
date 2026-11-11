@@ -58,7 +58,7 @@ not the Calendar robot (that robot's key is *inside* the secret).
 | --- | --- |
 | Expected monthly cost | Near **$0–a few USD** at demo traffic. Calendar API: no charge. Cloud Run scales to 0; default 512Mi / 1 vCPU, `max_instances=2`. Artifact Registry and Secret Manager stay in free tiers at our volume. Telemetry: the log-based metrics and the dashboard are free at this volume; Cloud Logging free allotment 50 GiB/month (~0.5 KB per request line); Cloud Trace free tier 2.5M spans/month. Main avoidable Cloud Run cost after telemetry: `cpu_idle = false` keeps an instance billed until Cloud Run stops it (~15 minutes after the last request) |
 | GCP project owner | **Arda Dinc**, project `baskd-calendar` (`HUMAN_STEPS.md` §0) |
-| Teardown date | **2026-12-15** (after Milestone 3 is graded). Procedure: `infra/README.md` "Teardown" for each environment, then delete the state bucket. Also remove the Calendar service account, its keys and the test-calendar sharing (`HUMAN_STEPS.md`) |
+| Teardown date | **Not before HW2 grades are released**, and not before 2026-12-15. The service and its telemetry stay up until then, as the submission requires. Procedure: `infra/README.md` "Teardown" for each environment, then delete the state bucket. Also remove the Calendar service account, its keys and the test-calendar sharing (`HUMAN_STEPS.md`) |
 
 Raise unexpected bills on the course `#help` channel early.
 
