@@ -639,5 +639,7 @@ def test_unknown_write_outcome_is_502_without_retry_after(
     body = {"title": "Standup", "start": "2026-10-07T15:00:00Z", "end": "2026-10-07T15:30:00Z"}
     response = client.request(method, path, json=body)
     assert response.status_code == 502
-    assert response.json()["error"]["code"] == "provider_error"
+    error = response.json()["error"]
+    assert error["code"] == "provider_error"
+    assert error["retryable"] is False
     assert "Retry-After" not in response.headers
