@@ -37,6 +37,7 @@ Earlier releases: `v0.1.0-alpha.1` (Milestone 1, Oct 7) and `v0.1.0-rc.1` (revie
 | [`docs/FINAL_RELEASE_CHECKLIST.md`](docs/FINAL_RELEASE_CHECKLIST.md) | What the October 21 final release still needs, with owners and draft release notes |
 | [`docs/HUMAN_STEPS.md`](docs/HUMAN_STEPS.md) | Things only a human can do: Google Cloud project, service account key, sharing the test calendar, GitHub secrets, access/permissions |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Running it somewhere other than a laptop (Docker, Cloud Run), configuration and rollback |
+| [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Operate the deployed service: five questions, failure runbook, cost, blast radius, signals → actions |
 | [`docs/SLO.md`](docs/SLO.md) | What we promise for `GET /events/{id}` (availability and latency SLOs), the burn-rate alert and the error budget policy |
 | [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) | Prioritised backlog after Milestone 1 (Levels 3+, extensions, process) |
 | [`docs/TEAM_AGREEMENT.md`](docs/TEAM_AGREEMENT.md) | How we work together (fill in and accept as a team) |
@@ -148,8 +149,9 @@ Every non-2xx response has the body
 `{"error": {"code": "<stable_code>", "message": "<human readable>", "retryable": false, "details": [...]}}`.
 `retryable` is always present and says whether repeating the identical request may succeed.
 It is `true` only for `provider_unavailable`; the last column below has the details.
-`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is only present on a
-`422`. Branch on `code` and the status (`invalid_input` is both the 422 and the 400 below);
+`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is present on request
+validation failures (`422`, and `400` for malformed JSON). Branch on `code` and the status
+(`invalid_input` is both the 422 and the 400 below);
 the `message` is for people and may change. Messages are the service's own: provider error
 text is never passed through. The codes are the ones Teams 2, 5 and 7 share in their joint
 Calendar API contract, so a client can branch on them against any of the three services.
@@ -157,7 +159,7 @@ Calendar API contract, so a client can branch on them against any of the three s
 | `code` | HTTP | Kind of failure | When | Retry the same request? |
 | --- | --- | --- | --- | --- |
 | `invalid_input` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
-| `invalid_input` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
+| `invalid_input` | 400 | invalid input | A malformed JSON body, a malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
 | `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
 | `access_denied` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |

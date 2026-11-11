@@ -15,6 +15,8 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- Malformed JSON request bodies now return `400 invalid_input` instead of `422`. Valid
+  JSON that fails schema validation is still `422 invalid_input`. (#34)
 - A create or replace that times out, loses its connection or gets a 5xx from Google now
   returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
   `Retry-After`: the write may already have been applied, so re-sending it could create a
@@ -41,6 +43,10 @@ Release notes on GitHub are built from the matching section here.
   Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
   run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
   `validate`, `test`). (#43)
+- `docs/OPERATIONS.md`: how a stranger operates the deployed service — five questions
+  (what/version/health/logs/rollback), a BASK'D-specific failure runbook, the Terraform
+  resources that matter, monthly cost and teardown date, blast radius of deploy vs runtime
+  identities, and signals → actions for the dashboard panels and SLO alert. (#46)
 - Level 4 (`docs/SLO.md`, `infra/slo.tf`): availability and latency SLOs for
   `GET /events/{id}` (99% not failed on our side; 95% of successes under 1000 ms; both over
   28 days), built on the request metrics, plus a fast-burn alert (14.4x over both 1 hour and

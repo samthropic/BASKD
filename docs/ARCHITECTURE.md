@@ -114,7 +114,8 @@ not_found` only applies to operations that address an existing event id.
 In words:
 
 1. FastAPI parses and validates the body/query into `EventInput` / `ListEventsQuery`
-   (`baskd/models.py`). Anything invalid stops here with a 422 that lists each problem.
+   (`baskd/models.py`). A body that is not JSON at all stops here with a 400; anything else
+   invalid (schema / type / rule) stops with a 422 that lists each problem.
 2. The handler asks for `provider: Provider` and FastAPI hands it the object stored on
    `app.state` by `create_app()` (`baskd/api/dependencies.py`). Handlers are 1-3 lines.
 3. The provider does the work and returns `Event` objects (UTC) or raises one of the
@@ -215,7 +216,8 @@ globals.
 | `ProviderUnavailable` | `provider_unavailable` | 503 + `Retry-After: 5` | timeout, network error, 5xx on a read or delete; 429, quota; a write that never reached Google |
 | `ProviderAuthError` | `access_denied` | 502 | 401/403, bad key, calendar not shared |
 | `ProviderError` | `provider_error` | 502 | a create/replace with an unknown outcome (timeout, reset, 5xx); anything else from the provider |
-| (FastAPI validation) | `invalid_input` | 422 | invalid body/query/path |
+| (FastAPI validation) | `invalid_input` | 400 | malformed JSON body (`json_invalid`) |
+| (FastAPI validation) | `invalid_input` | 422 | valid JSON (or query/path) that breaks a schema or rule |
 | (Starlette `HTTPException`) | `http_error` | as raised | unknown routes, method not allowed |
 | (anything else) | `internal_error` | 500 | bug; logged with traceback, message is generic |
 
