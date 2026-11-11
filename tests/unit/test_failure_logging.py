@@ -185,7 +185,7 @@ def test_bug_is_a_generic_500_with_a_logged_traceback(
     response = failing_client(RuntimeError("secret internal detail")).get("/events/e1")
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "internal_error", "message": "Internal server error"}
+        "error": {"code": "internal_error", "message": "Internal server error", "retryable": False}
     }
     assert "secret" not in response.text
     assert GENERATED_ID.fullmatch(response.headers["X-Request-ID"])

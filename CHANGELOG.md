@@ -12,6 +12,9 @@ Release notes on GitHub are built from the matching section here.
   `400`), `event_not_found` → `not_found`, `provider_auth_error` → `access_denied`. HTTP
   statuses are unchanged. Clients that branch on `code` must update, and tell the two
   `invalid_input` cases apart by status. (#31)
+- Every error body now has a required boolean `retryable` (joint contract rule 4). It is
+  `true` only for `provider_unavailable`. Clients that compare a whole error body must
+  update. (#33)
 
 ## [0.1.0] - 2026-10-21
 

@@ -114,7 +114,11 @@ def test_missing_or_deleted_is_404(backend: str, outcome: int | str) -> None:
         response = client.get("/events/gone")
         assert response.status_code == 404
         assert response.json() == {
-            "error": {"code": "not_found", "message": "Event 'gone' was not found"}
+            "error": {
+                "code": "not_found",
+                "message": "Event 'gone' was not found",
+                "retryable": False,
+            }
         }
 
 

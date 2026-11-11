@@ -2,10 +2,12 @@
 
 Every non-2xx response has the body::
 
-    {"error": {"code": "<stable_snake_case>", "message": "<human readable>", "details": [...]}}
+    {"error": {"code": "<stable_snake_case>", "message": "<human readable>",
+               "retryable": false, "details": [...]}}
 
-``details`` is only present for validation errors and lists ``loc``/``msg``/``type`` per
-problem, without echoing the submitted input back.
+``retryable`` says whether repeating the identical request may succeed. ``details`` is only
+present for validation errors and lists ``loc``/``msg``/``type`` per problem, without echoing
+the submitted input back.
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ class ValidationDetail(BaseModel):
 class ErrorBody(BaseModel):
     code: str
     message: str
+    retryable: bool
     details: list[ValidationDetail] | None = None
 
 
@@ -63,11 +66,17 @@ def error_response(
     code: str,
     message: str,
     *,
+    retryable: bool = False,
     details: Sequence[ValidationDetail] | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(
-        error=ErrorBody(code=code, message=message, details=list(details) if details else None)
+        error=ErrorBody(
+            code=code,
+            message=message,
+            retryable=retryable,
+            details=list(details) if details else None,
+        )
     )
     return JSONResponse(
         status_code=status_code, content=body.model_dump(exclude_none=True), headers=headers
@@ -110,7 +119,9 @@ def register_error_handlers(app: FastAPI) -> None:
             if status_code == status.HTTP_503_SERVICE_UNAVAILABLE
             else None
         )
-        return error_response(status_code, exc.code, exc.message, headers=headers)
+        return error_response(
+            status_code, exc.code, exc.message, retryable=exc.retryable, headers=headers
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(

@@ -143,8 +143,10 @@ Rules every client can rely on (each is enforced by a test):
 ### Errors
 
 Every non-2xx response has the body
-`{"error": {"code": "<stable_code>", "message": "<human readable>", "details": [...]}}`,
-with `details` (per-field `loc`/`msg`/`type`, never your input echoed back) only on a
+`{"error": {"code": "<stable_code>", "message": "<human readable>", "retryable": false, "details": [...]}}`.
+`retryable` is always present and says whether repeating the identical request may succeed.
+It is `true` only for `provider_unavailable`; the last column below has the details.
+`details` (per-field `loc`/`msg`/`type`, never your input echoed back) is only present on a
 `422`. Branch on `code` and the status (`invalid_input` is both the 422 and the 400 below);
 the `message` is for people and may change. Messages are the service's own: provider error
 text is never passed through. The codes are the ones Teams 2, 5 and 7 share in their joint
