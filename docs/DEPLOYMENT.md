@@ -133,10 +133,15 @@ which events, if any, were affected.
 
 Run in the disposable `baskd-staging` service:
 
-1. `staging-drill-good`: a good release, deployed and promoted. _Run: TBD_
-2. `staging-drill-broken`: a deliberately broken release (replace answers 500). The candidate's
-   smoke check fails at `replace`, traffic stays on (is sent back to) the good revision, the
-   smoke check passes against it, and the run fails. _Run: TBD_
+1. [`staging-drill-good`](https://github.com/samthropic/BASKD/actions/runs/43082678541): a good
+   release. Candidate `baskd-staging-00002-fem` passed its smoke check, took 100% of traffic,
+   and passed again on the live URL. A `terraform plan` afterwards showed no changes.
+2. [`staging-drill-broken`](https://github.com/samthropic/BASKD/actions/runs/43083004869): a
+   deliberately broken release (a tag-only commit where replace raises, so it answers 500).
+   Candidate `baskd-staging-00005-taj` failed its smoke check at `replace` (`HTTP 500`), so it
+   never received traffic. The rollback step pinned 100% of traffic to the previous revision,
+   `baskd-staging-00002-fem`, the smoke check passed against it, and the run failed, so the
+   release was not marked successful.
 
 The smoke check deletes its own events even when it fails, so the drill leaves nothing in the
 calendar.
