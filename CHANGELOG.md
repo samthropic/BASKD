@@ -34,6 +34,10 @@ Release notes on GitHub are built from the matching section here.
   Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
   run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
   `validate`, `test`). (#43)
+- `docs/OPERATIONS.md`: how a stranger operates the deployed service — five questions
+  (what/version/health/logs/rollback), a BASK'D-specific failure runbook, the Terraform
+  resources that matter, monthly cost and teardown date, blast radius of deploy vs runtime
+  identities, and signals → actions for the dashboard panels and SLO alert. (#46)
 
 ## [0.1.0] - 2026-10-21
 
