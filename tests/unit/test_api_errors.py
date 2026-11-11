@@ -22,7 +22,7 @@ from tests.conftest import event_payload, failing_client
         (EventNotFound("e1"), 404, "not_found", False),
         (InvalidRequest("bad cursor"), 400, "invalid_input", False),
         (ProviderUnavailable("down"), 503, "provider_unavailable", True),
-        (ProviderAuthError("denied"), 502, "access_denied", False),
+        (ProviderAuthError("denied"), 403, "access_denied", False),
         (ProviderError("weird"), 502, "provider_error", False),
         (CalendarError("unknown"), 500, "calendar_error", False),
     ],

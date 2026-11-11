@@ -118,7 +118,7 @@ sequenceDiagram
 ```
 
 For create, a Google `404` means that the configured calendar does not exist or was not
-shared with the service account, so it becomes `502 access_denied`. `404
+shared with the service account, so it becomes `403 access_denied`. `404
 not_found` only applies to operations that address an existing event id.
 
 In words:
@@ -225,7 +225,7 @@ globals.
 | `EventNotFound` | `not_found` | 404 | get/replace/delete of an unknown or deleted id |
 | `InvalidRequest` | `invalid_input` | 400 | the provider rejected something we could not validate up front (bad cursor, a Google 400) |
 | `ProviderUnavailable` | `provider_unavailable` | 503 + `Retry-After: 5` | timeout, network error, 5xx on a read or delete; 429, quota; a write that never reached Google |
-| `ProviderAuthError` | `access_denied` | 502 | 401/403, bad key, calendar not shared |
+| `ProviderAuthError` | `access_denied` | 403 | 401/403, bad key, calendar not shared |
 | `ProviderError` | `provider_error` | 502 | a create/replace with an unknown outcome (timeout, reset, 5xx); anything else from the provider |
 | (FastAPI validation) | `invalid_input` | 400 | malformed JSON body (`json_invalid`) |
 | (FastAPI validation) | `invalid_input` | 422 | valid JSON (or query/path) that breaks a schema or rule |
@@ -240,7 +240,7 @@ How a Google failure becomes one of those (all of this lives in
 flowchart LR
     H["HttpError from the SDK"] --> S{HTTP status}
     S -->|"404 / 410, call had an event_id"| NF["EventNotFound<br/>404 not_found"]
-    S -->|"404, no event_id (create / list)"| AUTH["ProviderAuthError<br/>502 access_denied<br/>'calendar not found or not shared'"]
+    S -->|"404, no event_id (create / list)"| AUTH["ProviderAuthError<br/>403 access_denied<br/>'calendar not found or not shared'"]
     S -->|"400"| INV["InvalidRequest<br/>400 invalid_input<br/>(Google's message included)"]
     S -->|"401"| AUTH
     S -->|"403 with quota reason"| UNAV["ProviderUnavailable<br/>503 provider_unavailable + Retry-After"]

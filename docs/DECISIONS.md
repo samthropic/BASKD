@@ -42,7 +42,7 @@ Observations (things we did or saw):
   [`REQUIREMENTS.md`](REQUIREMENTS.md) §1).
 - CI runs the same integration tests unattended from two repository secrets.
 - Binding to one calendar made a misconfiguration observable: a calendar the robot cannot
-  see answers 404, which we report as `502 access_denied`. The integration test
+  see answers 404, which we report as `403 access_denied`. The integration test
   `test_calendar_the_service_cannot_see_is_an_access_denial` shows this against Google.
 
 Assumptions (taken from Google's documentation, not observed by us):
@@ -61,6 +61,18 @@ Assumptions (taken from Google's documentation, not observed by us):
   between people, and anyone holding it can write to the test calendar. The blast radius is
   that one calendar, and the rotation steps are in `HUMAN_STEPS.md` §6, but it is a manual
   process that relies on people.
+
+### Changed for HW2: an access denial is 403, not 502 (#32)
+
+In HW1 we answered `502 access_denied`. The reasoning: the API has no caller identities, so a
+denial is the *service* being refused by Google, and only an operator can fix it. A 403 tells
+a caller "you may not", which is not what happened. For HW2, Teams 2, 5 and 7 agreed on one
+status per shared code, and joint contract rule 9 gives `access_denied` a 403. We moved to
+403 so a client written for the contract behaves the same against all three services. The
+cost is the distinction above: a caller can no longer tell from the status alone that the
+problem is ours. The `message` ("calendar not found or not shared", "rejected the service's
+credentials") and `retryable: false` still say it is not worth retrying, and the failure log
+still records `category: access_denied` for the operator.
 
 ## What remains uncertain
 

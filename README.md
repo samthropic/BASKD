@@ -80,11 +80,11 @@ calendar, chosen by configuration; clients never name a calendar.
 | --- | --- | --- | --- |
 | `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
 | `GET /ready` | Readiness: can requests succeed right now? Makes one cheap provider call (one event, one field). | `200 {"status":"ready","provider":"google","version":"…"}` | `503 {"status":"not_ready",…,"reason":"<error code>"}` |
-| `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `502`, `503` |
-| `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `502`, `503` |
-| `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `502`, `503` |
-| `PUT /events/{id}` | Replace every client-editable field | `200` event | `404`, `422`, `400`, `502`, `503` |
-| `DELETE /events/{id}` | Delete | `204` | `404` (also when already deleted), `502`, `503` |
+| `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `403`, `502`, `503` |
+| `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `403`, `502`, `503` |
+| `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `403`, `502`, `503` |
+| `PUT /events/{id}` | Replace every client-editable field | `200` event | `404`, `422`, `400`, `403`, `502`, `503` |
+| `DELETE /events/{id}` | Delete | `204` | `404` (also when already deleted), `403`, `502`, `503` |
 
 An event looks like:
 
@@ -161,7 +161,7 @@ Calendar API contract, so a client can branch on them against any of the three s
 | `invalid_input` | 400 | invalid input | A malformed JSON body, a malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
 | `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
-| `access_denied` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
+| `access_denied` | 403 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
 | `provider_unavailable` | 503 + `Retry-After: 5` | provider failure | A read or delete that timed out, hit a network error, a provider 5xx/429 or exhausted quota; a create or replace that never reached the provider or was rate-limited | Yes, after `Retry-After` (a repeated `DELETE` that already succeeded returns 404) |
 | `provider_error` | 502 | provider failure | A create or replace that timed out, lost its connection or got a provider 5xx, so it may or may not have been applied; any other unexpected provider response | Not blindly: the outcome is unknown, so a retried create may duplicate. Re-read (`GET`/list) first |
 | `internal_error` | 500 | bug | An unexpected exception in the service | No: report it with the `X-Request-ID` |
@@ -204,7 +204,7 @@ Discovered up front and encoded rather than papered over (details in `docs/REQUI
   may return a "cancelled" event on `GET`. Both are reported as `404 not_found`.
 - **Google answers 404 both for "no such event" and "no such calendar / not shared".** Only
   the former can be a client error, so a 404 from *create* or *list* is reported as
-  `502 access_denied` ("calendar not found or not shared"), while a 404 from
+  `403 access_denied` ("calendar not found or not shared"), while a 404 from
   get/replace/delete is `404 not_found`.
 
 ### The shared contract with Teams 2 and 5

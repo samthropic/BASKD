@@ -25,6 +25,7 @@ EventId = Annotated[
 ]
 
 PROVIDER_FAILURES = (
+    status.HTTP_403_FORBIDDEN,
     status.HTTP_502_BAD_GATEWAY,
     status.HTTP_503_SERVICE_UNAVAILABLE,
 )

@@ -125,8 +125,8 @@ def test_missing_or_deleted_is_404(backend: str, outcome: int | str) -> None:
 @pytest.mark.parametrize(
     ("status", "expected", "code"),
     [
-        (401, 502, "access_denied"),
-        (403, 502, "access_denied"),
+        (401, 403, "access_denied"),
+        (403, 403, "access_denied"),
         (429, 503, "provider_unavailable"),
         (503, 503, "provider_unavailable"),
     ],
@@ -167,7 +167,7 @@ def test_two_apps_keep_their_own_provider() -> None:
 def test_get_openapi_documents_contract() -> None:
     with client_for(InMemoryCalendarProvider()) as client:
         operation = client.get("/openapi.json").json()["paths"]["/events/{event_id}"]["get"]
-        assert set(operation["responses"]) == {"200", "404", "422", "502", "503"}
+        assert set(operation["responses"]) == {"200", "403", "404", "422", "502", "503"}
         assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
             "$ref": "#/components/schemas/Event"
         }
