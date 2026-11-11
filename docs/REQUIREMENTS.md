@@ -115,7 +115,7 @@ integration run.
 | --- | --- |
 | Service accounts cannot invite attendees without domain-wide delegation (Google returns 403 `forbiddenForServiceAccounts`) | No attendee field in the API |
 | Deleted events: `events.get` may return `status: "cancelled"`; `events.delete` on a deleted event → 410 Gone | Both → `404 not_found` |
-| 404 is returned both for a missing event and for a calendar the robot cannot see | 404 on get/replace/delete → `404 not_found`; 404 on create/list → `502 access_denied` with a "not shared" hint |
+| 404 is returned both for a missing event and for a calendar the robot cannot see | 404 on get/replace/delete → `404 not_found`; 404 on create/list → `403 access_denied` with a "not shared" hint |
 | All-day events have `date` not `dateTime` | Read as `all_day: true` with midnight-UTC bounds; cannot be created or replaced (`PUT` → `400 invalid_input`, event unchanged) |
 | Recurring events are one resource with instances | Listed as expanded instances (`singleEvents=true`), cannot be created; `PUT` on a series → `400 invalid_input`, on a single occurrence → replaces only that occurrence |
 | `events.update` replaces the whole resource; sending back the fetched resource is Google's documented way to preserve fields we do not manage | `PUT` is fetch-modify-update inside the provider |

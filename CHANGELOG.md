@@ -15,6 +15,9 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- `access_denied` (the provider refused the service: bad or revoked key, calendar not
+  shared) is now `403` instead of `502` (joint contract rule 9). The code, message and
+  `retryable: false` are unchanged. Clients that branch on the status must update. (#32)
 - A create or replace that times out, loses its connection or gets a 5xx from Google now
   returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
   `Retry-After`: the write may already have been applied, so re-sending it could create a

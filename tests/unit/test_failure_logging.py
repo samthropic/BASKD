@@ -120,7 +120,7 @@ def test_provider_failure_is_503_retryable_and_logged_as_error(
     [
         (EventNotFound("e1"), 404, "not_found", False),
         (InvalidRequest("bad"), 400, "invalid_input", False),
-        (ProviderAuthError("denied"), 502, "access_denied", False),
+        (ProviderAuthError("denied"), 403, "access_denied", False),
         (ProviderUnavailable("down"), 503, "provider_failure", True),
         (ProviderError("weird"), 502, "provider_failure", False),
         (CalendarError("unknown"), 500, "internal", False),

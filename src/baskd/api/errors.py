@@ -36,7 +36,7 @@ STATUS_BY_ERROR: dict[type[CalendarError], int] = {
     EventNotFound: status.HTTP_404_NOT_FOUND,
     InvalidRequest: status.HTTP_400_BAD_REQUEST,
     ProviderUnavailable: status.HTTP_503_SERVICE_UNAVAILABLE,
-    ProviderAuthError: status.HTTP_502_BAD_GATEWAY,
+    ProviderAuthError: status.HTTP_403_FORBIDDEN,
     ProviderError: status.HTTP_502_BAD_GATEWAY,
     CalendarError: status.HTTP_500_INTERNAL_SERVER_ERROR,
 }

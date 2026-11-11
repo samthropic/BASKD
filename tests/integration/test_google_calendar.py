@@ -247,7 +247,7 @@ def test_calendar_the_service_cannot_see_is_an_access_denial(
     ):
         response = denied.get("/events", params={"limit": 1})
 
-    assert response.status_code == 502, response.text
+    assert response.status_code == 403, response.text
     assert response.json()["error"]["code"] == "access_denied"
     assert "google" not in response.text.lower()
     line = next(
