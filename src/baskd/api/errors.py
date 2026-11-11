@@ -159,13 +159,13 @@ def _validation_failed(request: Request, errors: Sequence[Any]) -> JSONResponse:
     log_failure(
         request,
         status=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        error="validation_error",
+        error="invalid_input",
         category="invalid_input",
         retryable=False,
     )
     return error_response(
         status.HTTP_422_UNPROCESSABLE_CONTENT,
-        "validation_error",
+        "invalid_input",
         "Request validation failed",
         details=_validation_details(errors),
     )

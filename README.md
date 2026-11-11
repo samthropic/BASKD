@@ -100,10 +100,10 @@ An event looks like:
 ```
 
 `GET /events/{id}` reads without changing the event. Treat the id as opaque (1–1024
-characters); a longer id returns `422 validation_error`. A successful read returns the
+characters); a longer id returns `422 invalid_input`. A successful read returns the
 same provider-neutral event shape above with UTC times and nullable optional fields.
 Existing all-day events and individual recurring occurrences can be read. A missing,
-deleted or cancelled event returns `404 event_not_found`. Provider authentication failures
+deleted or cancelled event returns `404 not_found`. Provider authentication failures
 return `502`; temporary unavailability returns `503` with `Retry-After: 5`.
 
 To create or replace one, send `title`, `start`, `end` and optionally `description`, `location`.
@@ -132,7 +132,7 @@ Rules every client can rely on (each is enforced by a test):
 - Listing uses **overlap semantics** on the half-open window `[from, to)`: an event is
   included when `event.end > from` and `event.start < to`. Either bound may be omitted.
   `limit` is 1-250 (default 50); `cursor` is opaque and only valid with the same `from`/`to`
-  as the request that returned it: another window returns `400 invalid_request` (`limit`
+  as the request that returned it: another window returns `400 invalid_input` (`limit`
   may change between pages).
 - `PUT` is a full replacement: optional fields you omit (or send as `null` or `""`) are
   cleared, and the `id` never changes. The body is validated before the event is looked up,
@@ -144,17 +144,19 @@ Rules every client can rely on (each is enforced by a test):
 
 Every non-2xx response has the body
 `{"error": {"code": "<stable_code>", "message": "<human readable>", "details": [...]}}`,
-with `details` (per-field `loc`/`msg`/`type`, never your input echoed back) only on
-`validation_error`. Branch on `code`; the `message` is for people and may change. Messages
-are the service's own: provider error text is never passed through.
+with `details` (per-field `loc`/`msg`/`type`, never your input echoed back) only on a
+`422`. Branch on `code` and the status (`invalid_input` is both the 422 and the 400 below);
+the `message` is for people and may change. Messages are the service's own: provider error
+text is never passed through. The codes are the ones Teams 2, 5 and 7 share in their joint
+Calendar API contract, so a client can branch on them against any of the three services.
 
 | `code` | HTTP | Kind of failure | When | Retry the same request? |
 | --- | --- | --- | --- | --- |
-| `validation_error` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
-| `invalid_request` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
-| `event_not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
+| `invalid_input` | 422 | invalid input | Body, query or path breaks a rule above (missing field, naive or numeric timestamp, `end <= start`, unknown field, bad `limit`) | No: fix the request |
+| `invalid_input` | 400 | invalid input | A malformed cursor, a cursor reused with another `from`/`to`, replacing an all-day event or a recurring series, or a request the provider rejects as invalid | No: fix the request |
+| `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
-| `provider_auth_error` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
+| `access_denied` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
 | `provider_unavailable` | 503 + `Retry-After: 5` | provider failure | Timeout, network error, provider 5xx/429 or exhausted quota | Yes, after `Retry-After`, for reads, `PUT` and `DELETE` (a repeated `DELETE` that already succeeded returns 404). A `POST` that timed out may have created the event: list the window before re-sending, or you may get a duplicate |
 | `provider_error` | 502 | provider failure | Any other unexpected provider response | Not blindly: the outcome is unknown, so a retried create may duplicate. Re-read (`GET`/list) first |
 | `internal_error` | 500 | bug | An unexpected exception in the service | No: report it with the `X-Request-ID` |
@@ -167,7 +169,7 @@ you send a well-formed one (`[A-Za-z0-9._:-]`, ≤ 128 chars), otherwise a fresh
 failed request writes one JSON log line on the `baskd.api.failures` logger:
 
 ```json
-{"event": "request_failed", "operation": "get_event", "status": 404, "error": "event_not_found",
+{"event": "request_failed", "operation": "get_event", "status": 404, "error": "not_found",
  "category": "not_found", "provider_involved": true, "retryable": false, "method": "GET",
  "route": "/events/{event_id}", "request_id": "6f1c…"}
 ```
@@ -186,15 +188,15 @@ Discovered up front and encoded rather than papered over (details in `docs/REQUI
 - **All-day and recurring events can be read, not created.** Existing all-day events show up
   with `all_day: true` and midnight-UTC bounds; recurring events are listed as individual
   occurrences. `PUT` refuses an all-day event or a whole recurring series with
-  `400 invalid_request` and leaves it unchanged (otherwise Google would silently turn an
+  `400 invalid_input` and leaves it unchanged (otherwise Google would silently turn an
   all-day event into a timed one); a single occurrence, as returned by `GET /events`, can be
   replaced and only that occurrence changes. Creating either is a documented next step.
 - **Deleting is not idempotent at the provider**: Google answers 410 for a second delete and
-  may return a "cancelled" event on `GET`. Both are reported as `404 event_not_found`.
+  may return a "cancelled" event on `GET`. Both are reported as `404 not_found`.
 - **Google answers 404 both for "no such event" and "no such calendar / not shared".** Only
   the former can be a client error, so a 404 from *create* or *list* is reported as
-  `502 provider_auth_error` ("calendar not found or not shared"), while a 404 from
-  get/replace/delete is `404 event_not_found`.
+  `502 access_denied` ("calendar not found or not shared"), while a 404 from
+  get/replace/delete is `404 not_found`.
 
 ## Configuration
 

@@ -114,15 +114,15 @@ def test_missing_or_deleted_is_404(backend: str, outcome: int | str) -> None:
         response = client.get("/events/gone")
         assert response.status_code == 404
         assert response.json() == {
-            "error": {"code": "event_not_found", "message": "Event 'gone' was not found"}
+            "error": {"code": "not_found", "message": "Event 'gone' was not found"}
         }
 
 
 @pytest.mark.parametrize(
     ("status", "expected", "code"),
     [
-        (401, 502, "provider_auth_error"),
-        (403, 502, "provider_auth_error"),
+        (401, 502, "access_denied"),
+        (403, 502, "access_denied"),
         (429, 503, "provider_unavailable"),
         (503, 503, "provider_unavailable"),
     ],
@@ -149,7 +149,7 @@ def test_invalid_id_is_rejected_before_provider_call(backend: str) -> None:
     with client_for(provider) as client:
         response = client.get("/events/" + "a" * 1025)
         assert response.status_code == 422
-        assert response.json()["error"]["code"] == "validation_error"
+        assert response.json()["error"]["code"] == "invalid_input"
 
 
 def test_two_apps_keep_their_own_provider() -> None:

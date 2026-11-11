@@ -74,7 +74,7 @@ def create_event(
         "Events overlapping the half-open window `[from, to)`, ordered by start. Follow "
         "`next_cursor` until it is `null`. A cursor is only valid with the same `from` and "
         "`to` as the request that returned it (`limit` may change); any other window "
-        "returns `400 invalid_request`."
+        "returns `400 invalid_input`."
     ),
     responses=documented_errors(
         status.HTTP_400_BAD_REQUEST,
@@ -97,7 +97,7 @@ def list_events(query: Annotated[ListEventsQuery, Query()], provider: Provider) 
         "Read one event by its opaque provider-assigned id without changing it. Returns "
         "the provider-neutral Event model with UTC timestamps, including existing all-day "
         "events and recurring occurrences. Missing, deleted or cancelled events return "
-        "404 event_not_found; ids longer than 1024 characters return 422 validation_error."
+        "404 not_found; ids longer than 1024 characters return 422 invalid_input."
     ),
     responses=documented_errors(
         status.HTTP_404_NOT_FOUND,
@@ -116,7 +116,7 @@ def get_event(event_id: EventId, provider: Provider) -> Event:
     description=(
         "Full replacement: every client-editable field is taken from the body. Omitted "
         "optional fields (`description`, `location`) are cleared. The `id` never changes. "
-        "All-day events and recurring series cannot be replaced (`400 invalid_request`); "
+        "All-day events and recurring series cannot be replaced (`400 invalid_input`); "
         "a single occurrence of a recurring event can."
     ),
     responses=documented_errors(
