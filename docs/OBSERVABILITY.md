@@ -120,6 +120,12 @@ How Arda read them:
 
 The "Things that look wrong but aren't" section above is where Arda needed help.
 
+![The BASK'D (staging) dashboard over 3 hours: traffic by operation; errors by operation and category (create_event invalid_input, get_event not_found, list_events provider_failure); p95 latency for successful and for failed requests](demo/observability-1-dashboard-staging.jpg)
+
+![Trace 74f348ab… for walkthrough-success-2, opened from its log line: Cloud Run /events 964 ms, then POST /events 943 ms, then google calendar.events.insert 935 ms](demo/observability-2-trace-success.jpg)
+
+![Trace 2fd1583a… for walkthrough-provider-failure-2: /events, GET /events and google calendar.events.list all marked as errors; the Google span takes 82 of the 113 ms](demo/observability-3-trace-provider-failure.jpg)
+
 ### First run, before the trace role
 
 Bryant's run, before `roles/cloudtrace.agent` was granted. Logs and metrics were complete, but
