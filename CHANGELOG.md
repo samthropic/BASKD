@@ -15,6 +15,8 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- Malformed JSON request bodies now return `400 invalid_input` instead of `422`. Valid
+  JSON that fails schema validation is still `422 invalid_input`. (#34)
 
 ### Added
 - `infra/`: Terraform for Cloud Run in the `baskd-calendar` project, with state in a
