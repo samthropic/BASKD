@@ -78,6 +78,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | Method & path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
 | `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
+| `GET /ready` | Readiness: can requests succeed right now? Makes one cheap provider call (one event, one field). | `200 {"status":"ready","provider":"google","version":"…"}` | `503 {"status":"not_ready",…,"reason":"<error code>"}` |
 | `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `403`, `502`, `503` |
 | `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `403`, `502`, `503` |
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `403`, `502`, `503` |
@@ -166,17 +167,21 @@ Calendar API contract, so a client can branch on them against any of the three s
 A failed operation is never reported as a success, and a request rejected with 4xx before
 reaching the provider (422, cursor 400) has made no change.
 
-**Request ids and failure logs.** Every response carries an `X-Request-ID` header: yours if
+**Request ids and request logs.** Every response carries an `X-Request-ID` header: yours if
 you send a well-formed one (`[A-Za-z0-9._:-]`, ≤ 128 chars), otherwise a fresh id. Each
-failed request writes one JSON log line on the `baskd.api.failures` logger:
+request (except `/health`) writes one JSON log line on the `baskd.requests` logger:
 
 ```json
-{"event": "request_failed", "operation": "get_event", "status": 404, "error": "not_found",
- "category": "not_found", "provider_involved": true, "retryable": false, "method": "GET",
- "route": "/events/{event_id}", "request_id": "6f1c…"}
+{"event": "request_failed", "operation": "get_event", "outcome": "failure", "status": 404,
+ "error": "not_found", "category": "not_found", "provider_involved": true,
+ "retryable": false, "method": "GET", "route": "/events/{event_id}", "request_id": "6f1c…",
+ "latency_ms": 212.4, "release": "0.2.0+1a2b3c4", "trace_id": "4bf9…", "span_id": "00f0…"}
 ```
 
-4xx lines are `WARNING`, 5xx lines `ERROR`; only `internal_error` carries a stack trace.
+A success is `request_succeeded` with `"outcome": "success"` and no error fields. Success
+lines are `INFO`, 4xx `WARNING`, 5xx `ERROR`; only `internal_error` carries a stack trace.
+`trace_id` leads to the request's trace; metrics, traces and the dashboard are described in
+[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 Logs never contain request or response bodies, query strings, event ids (the route
 *template* is logged), headers, credentials or provider error text. The Google adapter adds
 its own line with the provider's HTTP status and `reason` codes for provider failures.
@@ -213,6 +218,9 @@ working directory. `.env.example` documents each one.
 | `BASKD_GOOGLE_CREDENTIALS_JSON` | | Alternative to the file: the key's JSON inline (used by CI) |
 | `BASKD_GOOGLE_TIMEOUT_SECONDS` | `10` | Per-call timeout to Google |
 | `BASKD_LOG_LEVEL` | `INFO` | Level for the service's own loggers |
+| `BASKD_LOG_FORMAT` | `text` | `json` writes Cloud Logging's structured format (set on Cloud Run) |
+| `BASKD_GCP_PROJECT` | | Project that receives traces. Unset: spans are made (log lines keep a trace id) but not exported |
+| `BASKD_COMMIT` | `unknown` | Commit the image was built from; the Dockerfile sets it. Logs report `release` as version + short commit |
 
 The service fails at startup with a readable message when `google` is selected but the
 calendar id or credentials are missing.

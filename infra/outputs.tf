@@ -27,3 +27,8 @@ output "deploy_service_account" {
   description = "Identity the deploy workflow impersonates (service_account in deploy.yml)."
   value       = google_service_account.deploy.email
 }
+
+output "dashboard_url" {
+  description = "Level 3 dashboard: traffic, errors, latency and saturation per operation."
+  value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${basename(google_monitoring_dashboard.service.id)}?project=${var.project_id}"
+}

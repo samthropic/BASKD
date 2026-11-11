@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from baskd.api.failure_log import REQUEST_ID_HEADER, log_failure, request_id_of
+from baskd.api.request_log import REQUEST_ID_HEADER, log_failure, request_id_of
 from baskd.errors import (
     CalendarError,
     EventNotFound,
@@ -147,16 +147,8 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
-        # A bug, so the traceback is logged. This handler runs outside the middleware
-        # stack, so it must add the request id header itself.
-        log_failure(
-            request,
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error="internal_error",
-            category="internal",
-            retryable=False,
-            exc_info=exc,
-        )
+        # A bug. The request-log middleware already wrote its line with the traceback. This
+        # handler runs outside the middleware stack, so it must add the request id itself.
         request_id = request_id_of(request)
         return error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -12,7 +12,10 @@ locals {
 resource "google_project_service" "apis" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudtrace.googleapis.com",
     "iam.googleapis.com",
+    "logging.googleapis.com",
+    "monitoring.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
   ])
@@ -31,8 +34,8 @@ resource "google_artifact_registry_repository" "images" {
   depends_on = [google_project_service.apis]
 }
 
-# The identity the container runs as. It can read one secret and nothing else; it is not
-# the identity that talks to Google Calendar (that one's key is in the secret).
+# The identity the container runs as. It can read one secret and write traces, nothing else;
+# it is not the identity that talks to Google Calendar (that one's key is in the secret).
 resource "google_service_account" "runtime" {
   account_id   = "${local.name}-runtime"
   display_name = "BASK'D Cloud Run runtime (${var.environment})"
@@ -59,6 +62,14 @@ resource "google_secret_manager_secret_iam_member" "runtime_reads_key" {
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# Lets the app export its spans to Cloud Trace (BASKD_GCP_PROJECT). Write-only: it cannot
+# read traces back. Logs need no role: Cloud Run collects stdout itself.
+resource "google_project_iam_member" "runtime_writes_traces" {
+  project = var.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # The service itself. Created only once an image digest is supplied (README step 3).
 resource "google_cloud_run_v2_service" "api" {
   count = var.image == null ? 0 : 1
@@ -78,12 +89,13 @@ resource "google_cloud_run_v2_service" "api" {
   # Terraform owns the service's configuration; the deploy workflow owns which image runs and
   # where traffic goes. `var.image` only seeds the first revision, so a release does not make
   # the next `terraform plan` want to roll the service back to that image.
+  # template.revision is not ignored: ignoring it made Terraform resend the last deployed
+  # revision's name with a changed template, which Cloud Run rejects (409, #44).
   lifecycle {
     ignore_changes = [
       client,
       client_version,
       traffic,
-      template[0].revision,
       template[0].labels,
       template[0].annotations,
       template[0].containers[0].image,
@@ -123,12 +135,25 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "BASKD_GOOGLE_TIMEOUT_SECONDS"
         value = tostring(var.google_timeout_seconds)
       }
+      # Level 3 telemetry: Cloud Logging's JSON line format, and traces to this project.
+      env {
+        name  = "BASKD_LOG_FORMAT"
+        value = "json"
+      }
+      env {
+        name  = "BASKD_GCP_PROJECT"
+        value = var.project_id
+      }
 
       resources {
         limits = {
           cpu    = "1"
           memory = "512Mi"
         }
+        # Spans are exported in the background after the response is sent. With CPU only
+        # during requests, the last request's trace would wait for the next request. Cost:
+        # an idle instance is billed until Cloud Run stops it (about 15 minutes).
+        cpu_idle = false
       }
 
       # /health never calls Google, so a Google outage cannot fail these probes and make

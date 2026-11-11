@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from baskd import __version__
 from baskd.errors import (
     CalendarError,
     EventNotFound,
@@ -63,3 +64,26 @@ def test_health_does_not_touch_the_provider() -> None:
     response = failing_client(ProviderUnavailable("down")).get("/health")
     assert response.status_code == 200
     assert response.json()["provider"] == "failing"
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (ProviderUnavailable("down"), "provider_unavailable"),
+        (ProviderAuthError("calendar not shared"), "access_denied"),
+    ],
+)
+def test_ready_is_503_while_health_stays_200(error: CalendarError, reason: str) -> None:
+    # The split that keeps a provider outage from becoming a restart loop: probes use
+    # /health, which stays up; /ready reports that requests would fail right now.
+    client = failing_client(error)
+    assert client.get("/health").status_code == 200
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "provider": "failing",
+        "version": __version__,
+        "reason": reason,
+    }
+    assert error.message not in response.text

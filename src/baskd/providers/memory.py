@@ -65,6 +65,9 @@ class InMemoryCalendarProvider:
             if self._events.pop(event_id, None) is None:
                 raise EventNotFound(event_id)
 
+    def check_ready(self) -> None:
+        """Always ready: there is nothing to reach."""
+
 
 def _overlaps(event: Event, time_min: datetime | None, time_max: datetime | None) -> bool:
     """Same semantics as Google Calendar's ``timeMin``/``timeMax``: half-open overlap."""
