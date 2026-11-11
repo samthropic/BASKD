@@ -4,7 +4,7 @@
 project_id  = "baskd-calendar"
 region      = "us-east1"
 environment = "prod"
-calendar_id = "<calendar id from docs/HUMAN_STEPS.md, the same value as BASKD_GOOGLE_CALENDAR_ID>"
+calendar_id = "<the value of BASKD_GOOGLE_CALENDAR_ID in your .env>"
 
 # Leave commented out on the first apply. After pushing an image (README step 3):
 # image = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:<digest>"

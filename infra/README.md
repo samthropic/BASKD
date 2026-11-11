@@ -27,18 +27,23 @@ key with `gcloud`. So the key never appears in the Terraform state, the reposito
 ## Before you start
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.6 or newer, the
-  [gcloud CLI](https://cloud.google.com/sdk/docs/install) and Docker.
+  [gcloud CLI](https://cloud.google.com/sdk/docs/install), and Docker **running** (step 3
+  builds an image).
+- **Billing enabled** on the `baskd-calendar` project. Cloud Run and Artifact Registry refuse
+  to start without it.
 - Owner on the `baskd-calendar` project (ask the project owner listed in
   `docs/HUMAN_STEPS.md` §0), or at least: Cloud Run Admin, Artifact Registry Admin, Secret Manager
   Admin, Service Account Admin, Service Usage Admin, and Storage Admin on the state bucket.
-- The Calendar service-account key at `secrets/service-account.json` and the calendar id
-  (`docs/HUMAN_STEPS.md` §1–2).
-- Log in once, for both gcloud and Terraform:
+- Your copy of the Calendar service-account key and the calendar id (`docs/HUMAN_STEPS.md`
+  §1–2). The calendar id is the value of `BASKD_GOOGLE_CALENDAR_ID` in your `.env`.
+- Log in once, for both gcloud and Terraform. The last line stops gcloud warning that your
+  application-default credentials bill a different project:
 
   ```bash
   gcloud auth login
   gcloud auth application-default login
   gcloud config set project baskd-calendar
+  gcloud auth application-default set-quota-project baskd-calendar
   ```
 
 ## Step 0 (once per team): the state bucket
@@ -56,7 +61,7 @@ gcloud storage buckets update gs://baskd-calendar-tfstate --versioning
 
 ```bash
 cd infra
-cp terraform.tfvars.example prod.tfvars          # fill in calendar_id
+cp terraform.tfvars.example prod.tfvars          # calendar_id = BASKD_GOOGLE_CALENDAR_ID from .env
 terraform init -backend-config="bucket=baskd-calendar-tfstate" -backend-config="prefix=baskd/prod"
 terraform plan -var-file=prod.tfvars -out=tfplan  # read what it will do
 terraform apply tfplan
@@ -66,10 +71,18 @@ With no `image` set yet, this creates everything except the Cloud Run service.
 
 ## Step 2: put the Calendar key in Secret Manager
 
+Point `--data-file` at your copy of the key. In a fresh clone `secrets/` is empty, so use
+wherever you keep it:
+
 ```bash
 gcloud secrets versions add "$(terraform output -raw calendar_key_secret)" \
-  --data-file=../secrets/service-account.json
+  --data-file=/path/to/your/service-account.json
+gcloud secrets versions list "$(terraform output -raw calendar_key_secret)"
 ```
+
+**Do not go on until the list shows one enabled version.** If step 3 runs first, the new
+revision fails with `secret …/versions/latest was not found` and leaves a failed service
+behind (the next apply replaces it).
 
 ## Step 3: push an image and deploy it by digest
 
@@ -130,6 +143,12 @@ Step 3 only seeds the first revision. After that, releases go through
 split, so `terraform plan` stays clean after a release. Keep `image` in your `.tfvars` as it
 is; it is only used when the service is first created.
 
+After a release, traffic is pinned to that release's revision. So a later `terraform apply`
+that changes the service's configuration (an environment variable, scaling, the timeout)
+creates a new revision that gets **no traffic**. The change goes live with the next release,
+or move traffic to the new revision by hand:
+`gcloud run services update-traffic baskd --region us-east1 --to-latest`.
+
 The workflow's provider and identity are fixed names derived from the environment, and match
 these outputs:
 
@@ -159,7 +178,12 @@ terraform destroy -var-file=prod.tfvars
 ```
 
 This removes the Cloud Run service, the image repository and its images, the secret and its
-versions, and the runtime service account.
+versions, the runtime and deploy service accounts, and the GitHub workload identity pool.
+
+Google keeps a deleted workload identity pool for 30 days and its id cannot be reused in that
+time. So a `destroy` followed by an `apply` within 30 days fails on `baskd-github` (or
+`baskd-staging-github`). Restore the pool instead of recreating it, then apply again:
+`gcloud iam workload-identity-pools undelete baskd-github --location=global`.
 
 Left behind on purpose:
 
@@ -187,6 +211,12 @@ terraform test
 A teammate who did not write this provisions it from this page and records here every question
 they had to ask, and the README is updated to answer it.
 
+First run: Arda Dinc, Nov 11, 2026, prod and staging ([review on #49](https://github.com/samthropic/BASKD/pull/49)).
+
 | Question | Answer (now in this page) |
 | --- | --- |
-| _(to be filled in by the first run)_ | |
+| Step 3 ran before the key was in, and Cloud Run failed with `secret …/versions/latest was not found`. How do I know step 2 worked? | Step 2 ends with `gcloud secrets versions list`; don't go on until it shows one version |
+| Why does Cloud Run (or Artifact Registry) refuse to start, and why does step 3 fail to build? | "Before you start" now lists billing on the project and Docker running |
+| gcloud warns that the application-default credentials' quota project doesn't match. Does that matter? | The login block now ends with `gcloud auth application-default set-quota-project baskd-calendar` |
+| `--data-file=../secrets/service-account.json` fails in a fresh clone. Where is the key? | Step 2 says to point at your own copy; `secrets/` is empty in a fresh clone |
+| What is `calendar_id`? | `BASKD_GOOGLE_CALENDAR_ID` from `.env`, named in "Before you start", step 1 and `terraform.tfvars.example` |
