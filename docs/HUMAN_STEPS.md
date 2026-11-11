@@ -73,7 +73,7 @@ uv run pytest -m integration -ra       # expect 4 passed, 0 skipped
 
 If you see:
 
-- `provider_auth_error ... Calendar not found or not shared` → §2.2 was skipped or the ID is
+- `access_denied ... Calendar not found or not shared` → §2.2 was skipped or the ID is
   wrong.
 - `Google rejected the service-account credentials` → the key file is corrupt/revoked, or the
   machine clock is off by minutes (JWT signing is time-sensitive).

@@ -42,7 +42,7 @@ Observations (things we did or saw):
   [`REQUIREMENTS.md`](REQUIREMENTS.md) §1).
 - CI runs the same integration tests unattended from two repository secrets.
 - Binding to one calendar made a misconfiguration observable: a calendar the robot cannot
-  see answers 404, which we report as `502 provider_auth_error`. The integration test
+  see answers 404, which we report as `502 access_denied`. The integration test
   `test_calendar_the_service_cannot_see_is_an_access_denial` shows this against Google.
 
 Assumptions (taken from Google's documentation, not observed by us):

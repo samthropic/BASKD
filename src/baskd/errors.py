@@ -33,7 +33,7 @@ class CalendarError(Exception):
 class EventNotFound(CalendarError):
     """The requested event does not exist (or has been deleted)."""
 
-    code = "event_not_found"
+    code = "not_found"
     category = "not_found"
 
     def __init__(self, event_id: str) -> None:
@@ -44,7 +44,7 @@ class EventNotFound(CalendarError):
 class InvalidRequest(CalendarError):
     """The provider rejected the request as invalid (e.g. a malformed pagination cursor)."""
 
-    code = "invalid_request"
+    code = "invalid_input"
     category = "invalid_input"
 
 
@@ -74,7 +74,7 @@ class ProviderAuthError(CalendarError):
     it is the only access denial it can report, and only an operator can fix it.
     """
 
-    code = "provider_auth_error"
+    code = "access_denied"
     category = "access_denied"
 
 

@@ -164,12 +164,12 @@ def test_replace_refuses_all_day_and_series_but_moves_one_occurrence(
 
     refused = client.put(f"/events/{all_day['id']}", json=body)
     assert refused.status_code == 400, refused.text
-    assert refused.json()["error"]["code"] == "invalid_request"
+    assert refused.json()["error"]["code"] == "invalid_input"
     assert client.get(f"/events/{all_day['id']}").json()["all_day"] is True
 
     refused = client.put(f"/events/{series['id']}", json=body)
     assert refused.status_code == 400, refused.text
-    assert refused.json()["error"]["code"] == "invalid_request"
+    assert refused.json()["error"]["code"] == "invalid_input"
 
     window = {"from": start.isoformat(), "to": (start + timedelta(days=3)).isoformat()}
     occurrences = [
@@ -189,7 +189,7 @@ def test_replace_refuses_all_day_and_series_but_moves_one_occurrence(
 def test_unknown_event_is_404(client: TestClient) -> None:
     response = client.get("/events/definitelynotanevent000")
     assert response.status_code == 404
-    assert response.json()["error"]["code"] == "event_not_found"
+    assert response.json()["error"]["code"] == "not_found"
 
 
 def test_pagination_cursor_round_trip(client: TestClient, cleanup: list[str]) -> None:
@@ -248,7 +248,7 @@ def test_calendar_the_service_cannot_see_is_an_access_denial(
         response = denied.get("/events", params={"limit": 1})
 
     assert response.status_code == 502, response.text
-    assert response.json()["error"]["code"] == "provider_auth_error"
+    assert response.json()["error"]["code"] == "access_denied"
     assert "google" not in response.text.lower()
     line = next(
         json.loads(record.getMessage())

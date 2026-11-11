@@ -7,6 +7,14 @@ Release notes on GitHub are built from the matching section here.
 ## [Unreleased]
 
 ### Breaking changes
+- Error codes renamed to the names Teams 2, 5 and 7 share in their joint Calendar API
+  contract: `validation_error` and `invalid_request` → `invalid_input` (still `422` and
+  `400`), `event_not_found` → `not_found`, `provider_auth_error` → `access_denied`. HTTP
+  statuses are unchanged. Clients that branch on `code` must update, and tell the two
+  `invalid_input` cases apart by status. (#31)
+- Every error body now has a required boolean `retryable` (joint contract rule 4). It is
+  `true` only for `provider_unavailable`. Clients that compare a whole error body must
+  update. (#33)
 - A create or replace that times out, loses its connection or gets a 5xx from Google now
   returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
   `Retry-After`: the write may already have been applied, so re-sending it could create a
