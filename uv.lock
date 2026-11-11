@@ -82,6 +82,7 @@ name = "baskd"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "calendar-contract" },
     { name = "fastapi" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -107,6 +108,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "calendar-contract", git = "https://github.com/Airbus-A330/OSPSD-Calendar?tag=v0.1.0-rc.1" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "google-api-python-client", specifier = ">=2.130" },
     { name = "google-auth", specifier = ">=2.29" },
@@ -128,6 +130,14 @@ dev = [
     { name = "pytest", specifier = ">=8.2" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "calendar-contract"
+version = "0.1.0"
+source = { git = "https://github.com/Airbus-A330/OSPSD-Calendar?tag=v0.1.0-rc.1#1c1cad7a0732ddb242a05400d8833d94e4422424" }
+dependencies = [
+    { name = "pydantic" },
 ]
 
 [[package]]

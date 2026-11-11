@@ -207,6 +207,18 @@ Discovered up front and encoded rather than papered over (details in `docs/REQUI
   `502 access_denied` ("calendar not found or not shared"), while a 404 from
   get/replace/delete is `404 not_found`.
 
+### The shared contract with Teams 2 and 5
+
+Calendar Teams 2, 5 and 7 agreed on one shared contract for create, get, replace and delete.
+It is published as the Python package
+[`calendar-contract`](https://github.com/Airbus-A330/OSPSD-Calendar), and we depend on its
+`v0.1.0-rc.1` tag (`[tool.uv.sources]` in `pyproject.toml`). `baskd/contract.py` presents any
+of our providers through the package's `CalendarService` interface.
+`tests/unit/test_contract_conformance.py` runs the package's conformance suite against it on
+every `make check`. That suite checks the Python interface, not HTTP. The HTTP changes the
+contract asks of us are issues #31 to #35. Every check in the suite passes, including the
+one that a create or replace with an unknown outcome is not retryable (#35).
+
 ## Configuration
 
 All settings are environment variables prefixed `BASKD_`, also read from a `.env` file in the

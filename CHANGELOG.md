@@ -25,6 +25,17 @@ Release notes on GitHub are built from the matching section here.
   the window, for a create) before sending the write again.
 
 ### Added
+- Dependency on the shared `calendar-contract` package of Calendar Teams 2, 5 and 7, pinned
+  to its `v0.1.0-rc.1` git tag, and `baskd/contract.py`, which presents any provider through
+  the package's `CalendarService` interface. No HTTP behaviour changes. — #37
+- The package's conformance suite runs in `make check`
+  (`tests/unit/test_contract_conformance.py`):
+  - create, get, replace and delete run on the in-memory provider;
+  - the shared failures run on the Google provider over a fake SDK;
+  - every check passes, including that a create or replace with an unknown outcome is not
+    retryable (#35).
+- The same suite's create, get, replace and delete checks run against the real Google
+  Calendar in `make test-integration` (`tests/integration/test_contract_google.py`).
 - Level 3 telemetry (#44). One JSON log line per request (`request_succeeded` or
   `request_failed`) with operation, outcome, status, latency, release and trace id; on Cloud
   Run it is in Cloud Logging's format and links to its trace. Traces go to Cloud Trace: a
@@ -50,6 +61,10 @@ Release notes on GitHub are built from the matching section here.
 - `GET /ready`: readiness, separate from `/health` (liveness). It makes one cheap provider
   call and answers `503` with the error code as `reason` while requests would fail. Probes
   keep using `/health`, so a Google outage cannot cause a restart loop. (#42)
+
+### Setup and configuration
+- `calendar-contract` is a git dependency, so `uv sync` needs the `git` command. The
+  Docker builder stage now installs git. The runtime image does not include it.
 
 ## [0.1.0] - 2026-10-21
 

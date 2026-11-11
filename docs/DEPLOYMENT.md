@@ -49,6 +49,8 @@ in front if the host is reachable from elsewhere.
 
 The image is built from `Dockerfile` (multi-stage, locked dependencies, non-root user,
 `$PORT`-aware, built-in `HEALTHCHECK`). CI builds it on every push and checks `/health`.
+The builder stage installs `git`, because the shared `calendar-contract` package is a git
+dependency. The build therefore needs network access to github.com.
 
 ```bash
 docker build -t baskd:dev .
