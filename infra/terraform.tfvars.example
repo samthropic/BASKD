@@ -1,0 +1,13 @@
+# Copy to prod.tfvars (or staging.tfvars) and fill in. *.tfvars files are git-ignored.
+# Nothing in here is a secret: the Calendar key goes into Secret Manager, never into a variable.
+
+project_id  = "baskd-calendar"
+region      = "us-east1"
+environment = "prod"
+calendar_id = "<calendar id from docs/HUMAN_STEPS.md, the same value as BASKD_GOOGLE_CALENDAR_ID>"
+
+# Leave commented out on the first apply. After pushing an image (README step 3):
+# image = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:<digest>"
+
+# Who may call the service, e.g. teammates and the TAs:
+# invokers = ["user:someone@nyu.edu"]

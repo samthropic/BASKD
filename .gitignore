@@ -190,3 +190,12 @@ secrets/*
 .coverage
 coverage.xml
 .DS_Store
+
+# BASK'D: Terraform (state lives in GCS; .terraform.lock.hcl is committed)
+infra/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+*.tfvars
+!*.tfvars.example

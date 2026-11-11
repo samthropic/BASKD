@@ -161,6 +161,7 @@ imports `api/` except `app.py`. Validation happens once, in `models.py`; errors 
 | Add cross-cutting behaviour (auth, idempotency, retries, logging) | New module under `api/` (middleware/dependency) or a small service layer between `api/events.py` and the provider; wire it in `app.py::create_app` | README security note / `docs/NEXT_STEPS.md` | `test_api_*` via the `client` fixture; `FailingProvider` in `tests/conftest.py` for failure paths |
 | Move to a new tag of the shared `calendar-contract` package | `pyproject.toml` (`[tool.uv.sources]` tag) → `uv lock` → `contract.py` if the shared models, codes or signatures changed | README "The shared contract with Teams 2 and 5"; `CHANGELOG.md` | `tests/unit/test_contract_conformance.py` (the shared suite runs there; remove an `xfail` once its issue is fixed) |
 | Change CI, release or Docker | `.github/workflows/ci.yml`, `release.yml`, `Dockerfile`, `.dockerignore` | this file §4/§5; `docs/DEPLOYMENT.md` | the `docker` CI job is the test |
+| Change the cloud infrastructure | `infra/*.tf` (Terraform; state in GCS, see `infra/README.md`) | `infra/README.md` (setup, teardown, resource table); `docs/DEPLOYMENT.md` §4 | `infra/tests/plan.tftest.hcl` (`terraform test`, offline) |
 | Change how the team works | this file; `docs/TEAM_AGREEMENT.md` | | |
 
 Fixtures you can reuse instead of writing new scaffolding: `client` (TestClient on the fake

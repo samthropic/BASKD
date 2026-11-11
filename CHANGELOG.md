@@ -28,6 +28,17 @@ Release notes on GitHub are built from the matching section here.
     failure until #35 is fixed.
 - The same suite's create, get, replace and delete checks run against the real Google
   Calendar in `make test-integration` (`tests/integration/test_contract_google.py`).
+- `infra/`: Terraform for Cloud Run in the `baskd-calendar` project, with state in a
+  versioned GCS bucket, the Calendar key in Secret Manager, a runtime identity that can only
+  read that key, images pinned by digest, and separate `prod` and `staging` environments.
+  `infra/README.md` covers setup, calling the API and teardown. (#42)
+- Deploy pipeline (`.github/workflows/deploy.yml`): a `v*` tag builds the image once, deploys
+  it to Cloud Run by digest as a no-traffic candidate, smoke-checks it against the real
+  calendar (`scripts/smoke.py`: create, get, replace, delete), and only then moves traffic.
+  A failure sends traffic back to the previous revision. GitHub signs in with Workload
+  Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
+  run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
+  `validate`, `test`). (#43)
 
 ### Setup and configuration
 - `calendar-contract` is a git dependency, so `uv sync` needs the `git` command. The
