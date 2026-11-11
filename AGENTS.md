@@ -160,6 +160,7 @@ imports `api/` except `app.py`. Validation happens once, in `models.py`; errors 
 | Add a provider (e.g. Microsoft Graph) | `providers/<name>.py` (five methods + `name`) → `settings.py` → `providers/__init__.py::build_provider` | `docs/REQUIREMENTS.md` §3; README | fake-SDK unit tests (copy the pattern in `test_google_provider.py`) + self-skipping `tests/integration/test_<name>.py` |
 | Add cross-cutting behaviour (auth, idempotency, retries, logging) | New module under `api/` (middleware/dependency) or a small service layer between `api/events.py` and the provider; wire it in `app.py::create_app` | README security note / `docs/NEXT_STEPS.md` | `test_api_*` via the `client` fixture; `FailingProvider` in `tests/conftest.py` for failure paths |
 | Change CI, release or Docker | `.github/workflows/ci.yml`, `release.yml`, `Dockerfile`, `.dockerignore` | this file §4/§5; `docs/DEPLOYMENT.md` | the `docker` CI job is the test |
+| Change the cloud infrastructure | `infra/*.tf` (Terraform; state in GCS, see `infra/README.md`) | `infra/README.md` (setup, teardown, resource table); `docs/DEPLOYMENT.md` §4 | `infra/tests/plan.tftest.hcl` (`terraform test`, offline) |
 | Change how the team works | this file; `docs/TEAM_AGREEMENT.md` | | |
 
 Fixtures you can reuse instead of writing new scaffolding: `client` (TestClient on the fake

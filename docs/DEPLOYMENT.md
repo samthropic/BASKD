@@ -61,33 +61,20 @@ docker run --rm -p 8000:8000 \
 The key never enters the image: `.dockerignore` excludes `secrets/` and `.env*`, and the
 runtime stage only copies the virtualenv. Verify with `docker history baskd:dev` if in doubt.
 
-## 4. A managed platform (example: Google Cloud Run)
+## 4. Google Cloud Run (the deployed service)
 
-Cloud Run is a natural fit (we already have a Google Cloud project, it scales to zero, and
-the free tier covers a course project). Sketch, to be turned into a tested script when the
-team decides to deploy:
+The deployed service runs on Cloud Run in the `baskd-calendar` project, provisioned with
+Terraform. [`infra/README.md`](../infra/README.md) is the procedure: the state bucket, putting
+the key in Secret Manager, pushing an image and deploying it by digest, calling the API with
+an identity token, and teardown. It has two environments, `prod` (the one we demonstrate) and
+`staging` (disposable, for release drills), with separate state and resources.
 
-```bash
-PROJECT=baskd-calendar REGION=us-east1
-gcloud config set project "$PROJECT"
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
-
-# 1. Store the key in Secret Manager (never in an env var in the console UI)
-gcloud secrets create baskd-service-account --data-file=secrets/service-account.json
-
-# 2. Build and deploy from source (Cloud Build uses our Dockerfile)
-gcloud run deploy baskd --source . --region "$REGION" \
-  --set-env-vars BASKD_PROVIDER=google,BASKD_GOOGLE_CALENDAR_ID="<calendar id>" \
-  --set-secrets  /run/secrets/baskd/service-account.json=baskd-service-account:latest \
-  --set-env-vars BASKD_GOOGLE_CREDENTIALS_FILE=/run/secrets/baskd/service-account.json \
-  --no-allow-unauthenticated       # keep it private until the API has its own auth
-```
-
-Notes: Cloud Run injects `PORT`, which the image honours. With `--no-allow-unauthenticated`
-callers need an identity token (`gcloud auth print-identity-token`), which doubles as our
-missing caller authentication for now. Alternatives with similar effort: Fly.io, Render,
-Railway; all accept a Dockerfile and secrets as env vars (use `BASKD_GOOGLE_CREDENTIALS_JSON`
-there).
+Why Cloud Run: our project, the Calendar service account and the test calendar already live in
+Google Cloud, it scales to zero, and the key can be mounted from Secret Manager as a file.
+The service stays private (`invokers` in Terraform) because the API has no caller
+authentication of its own; callers send `gcloud auth print-identity-token`. Fly.io, Render and
+Railway would also run the image, with the key in their secret store as
+`BASKD_GOOGLE_CREDENTIALS_JSON`.
 
 ## 5. Promoting a release
 
