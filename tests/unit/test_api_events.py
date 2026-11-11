@@ -151,9 +151,13 @@ class TestCreate:
         assert ["body", "start"] in locations
         assert ["body", "end"] in locations
 
-    def test_malformed_json_is_400(self, client: TestClient) -> None:
-        response = client.post(
-            "/events", content=b"{not json", headers={"content-type": "application/json"}
+    @pytest.mark.parametrize(
+        ("method", "url"),
+        [("post", "/events"), ("put", "/events/any-id")],
+    )
+    def test_malformed_json_is_400(self, client: TestClient, method: str, url: str) -> None:
+        response = getattr(client, method)(
+            url, content=b"{not json", headers={"content-type": "application/json"}
         )
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid_input"
