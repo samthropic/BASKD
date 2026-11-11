@@ -2,14 +2,14 @@
 
 | | |
 | --- | --- |
-| **Authors** | Arda Dinc (draft), for Team 7 |
+| **Authors** | Arda Dinc (draft), for Team 7; implementation record (§12) by Karthik Ganeshan |
 | **Team and vertical** | Team 7 (Sam Fiallos, Arda Dinc, Bryant Luna-Ramos, Karthik Ganeshan, Daniel Zhang), Calendar vertical with Teams 2 and 5 |
 | **Reviewers** | Whole design: Sam Fiallos and Karthik Ganeshan (Team 7). Contract-facing parts (§3, §4, §6, §8): Alexander Freedman and Leon Liu (Team 2). See [§10](#10-review-record) |
-| **Status** | **Approved** by Team 7; Team 2's review comments answered ([§10](#10-review-record)) |
-| **Last updated** | 2026-11-04 |
+| **Status** | **Implemented** in `v0.2.0`. Approved by Team 7 on Nov 4; what changed while building it is in [§12](#12-what-changed-during-implementation) |
+| **Last updated** | 2026-11-11 |
 | **Shared contract** | [`calendar-contract` `v0.1.0-rc.1`](https://github.com/Airbus-A330/OSPSD-Calendar/tree/v0.1.0-rc.1) (commit `1c1cad7`): [HTTP contract](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/docs/HTTP_CONTRACT.md), [Python interface](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/docs/PYTHON_INTERFACE.md), [conformance suite](https://github.com/Airbus-A330/OSPSD-Calendar/blob/v0.1.0-rc.1/src/calendar_contract/conformance.py) |
 | **Decision memo** | "Calendar API: joint contract (Teams 2, 5, 7)", version 4, agreed Oct 28, 2026. It is a Google Doc whose link lets anyone edit, so it is not linked from this public repository; its rules are restated, with the memo's rule numbers, in the shared repo's HTTP contract above |
-| **Implementation work** | [#37](https://github.com/samthropic/BASKD/issues/37) / [PR #38](https://github.com/samthropic/BASKD/pull/38) (adopt the package, run its suite), [#31](https://github.com/samthropic/BASKD/issues/31) / [PR #36](https://github.com/samthropic/BASKD/pull/36) (shared error codes), [#32](https://github.com/samthropic/BASKD/issues/32), [#33](https://github.com/samthropic/BASKD/issues/33), [#34](https://github.com/samthropic/BASKD/issues/34), [#35](https://github.com/samthropic/BASKD/issues/35), release `v0.2.0` |
+| **Implementation work** | [#37](https://github.com/samthropic/BASKD/issues/37) / [PR #38](https://github.com/samthropic/BASKD/pull/38) (adopt the package, run its suite), [#31](https://github.com/samthropic/BASKD/issues/31) / [PR #36](https://github.com/samthropic/BASKD/pull/36) (shared error codes), [#32](https://github.com/samthropic/BASKD/issues/32) / [PR #56](https://github.com/samthropic/BASKD/pull/56), [#33](https://github.com/samthropic/BASKD/issues/33) / [PR #41](https://github.com/samthropic/BASKD/pull/41), [#34](https://github.com/samthropic/BASKD/issues/34) / [PR #54](https://github.com/samthropic/BASKD/pull/54), [#35](https://github.com/samthropic/BASKD/issues/35) / [PR #48](https://github.com/samthropic/BASKD/pull/48). Milestone 3 infrastructure: [PR #49](https://github.com/samthropic/BASKD/pull/49), [#50](https://github.com/samthropic/BASKD/pull/50), [#52](https://github.com/samthropic/BASKD/pull/52), [#53](https://github.com/samthropic/BASKD/pull/53), [#55](https://github.com/samthropic/BASKD/pull/55), [#57](https://github.com/samthropic/BASKD/pull/57). Release [`v0.2.0`](https://github.com/samthropic/BASKD/releases/tag/v0.2.0) |
 
 This document says how our HW1 service, BASK'D, will satisfy the contract the three Calendar
 teams agreed on, and how we will know it does. It does not repeat the contract: when a rule is
@@ -230,7 +230,7 @@ and the command that produced it.
 | ★ 5xx, timeout or network error after the `events.insert` or `events.update` was sent (#35) | `ProviderError` | 502 (was 503) | `provider_error` | false (was true) |
 | Any other Google response | `ProviderError` | 502 | `provider_error` | false |
 
-Every row gains a `retryable` field in the body (#33); today only the error classes carry it.
+Every error body carries `retryable` (#33).
 The shared HTTP contract's status table makes a bad path or query parameter `422`, and we
 follow it. The two `400` cases in the "extensions only" row are not shared validation: the
 cursor belongs to our listing extension, and the replace refusal is our own decision about
@@ -462,12 +462,12 @@ against Teams 2 and 5 when their services are reachable.
 
 | # | Question | Consequence | Owner | Next step |
 | --- | --- | --- | --- | --- |
-| 1 | Is a Google 5xx on a create or replace "outcome unknown" (502, not retryable) or "unavailable" (503, retryable)? | A retried create could duplicate an event | Karthik (#35) | **Answered in review:** "unknown". Karthik's #35 branch maps it to 502; 429 and a quota 403 stay 503. Closed when #35 merges |
-| 2 | Memo question 2: after a timed-out create, the shared core gives a client no way to check whether the event exists | Clients of Team 5 (no listing) cannot recover; ours can only by listing | Arda | Open an issue on the shared repository with decision B's alternative, before the Nov 11 checkpoint |
-| 3 | The shared `Event`, and the HTTP contract's wording for response events, require `end > start`, but rule 2 requires it only of requests | A valid Google event cannot be read through the shared interface | Arda | Open a wording PR on the shared repository (promised in our review of PR #14) |
-| 4 | Nobody owns an HTTP-level conformance suite for the vertical | HTTP differences between the three services are caught only by each team's own tests | Unassigned across the three teams | Raise at the next joint checkpoint |
-| 5 | Milestone 3 hosting: which platform, who owns the account, expected cost, teardown date | Required by Milestone 3 | To assign at the next team meeting | Record the choice here and in `docs/DEPLOYMENT.md` |
-| 6 | The memo cannot be linked from public repositories because its link grants edit access | Readers of this document cannot open the memo | Arda | Publish a read-only copy and link it in the header |
+| 1 | Is a Google 5xx on a create or replace "outcome unknown" (502, not retryable) or "unavailable" (503, retryable)? | A retried create could duplicate an event | Karthik (#35) | **Answered:** "unknown". Shipped in PR #48: a 5xx after the write was sent is 502; 429 and a quota 403 stay 503 |
+| 2 | Memo question 2: after a timed-out create, the shared core gives a client no way to check whether the event exists | Clients of Team 5 (no listing) cannot recover; ours can only by listing | Arda | **Still open.** Not raised on the shared repository by Nov 11. It stays in the shared contract's "Known limitation" section |
+| 3 | The shared `Event`, and the HTTP contract's wording for response events, require `end > start`, but rule 2 requires it only of requests | A valid Google event cannot be read through the shared interface | Arda | **Still open.** The wording PR was not opened by Nov 11. `contract.py` reports such an event as `provider_error` (§3) |
+| 4 | Nobody owns an HTTP-level conformance suite for the vertical | HTTP differences between the three services are caught only by each team's own tests | Team 2 | **Answered:** Team 2 wrote `CalendarHttpConformance` ([OSPSD-Calendar #24](https://github.com/Airbus-A330/OSPSD-Calendar/pull/24)). A local run of `main` plus the then-open PRs #38, #54 and #56 passed all 55 checks ([OSPSD-Calendar #26](https://github.com/Airbus-A330/OSPSD-Calendar/pull/26)); it is rerun once the shared stable tag ships the suite |
+| 5 | Milestone 3 hosting: which platform, who owns the account, expected cost, teardown date | Required by Milestone 3 | Arda | **Answered:** Cloud Run in `baskd-calendar` (owner Arda), provisioned by `infra/` (PR #49). Cost and the teardown date (2026-12-15) are in `docs/OPERATIONS.md` §4 |
+| 6 | The memo cannot be linked from public repositories because its link grants edit access | Readers of this document cannot open the memo | Arda | **Still open.** The shared repo's `HTTP_CONTRACT.md` restates every rule with its memo number in the meantime |
 
 ## 10. Review record
 
@@ -483,23 +483,54 @@ to the "Concerns raised so far" table. Approval here accepts the plan, not the i
 
 ## 11. Actions
 
-Owners marked "proposed" have not confirmed yet.
+Status as of `v0.2.0` (Nov 11).
 
-| Action | Owner | Output | Depends on | Checkpoint |
-| --- | --- | --- | --- | --- |
-| Adopt the package; run its suite on fakes and on real Google | Arda | PR #38 merged | Two reviews (dependency and Dockerfile change) | Nov 4 (PR open, live run passed) |
-| Rename the error codes | Arda | PR #36 merged (#31) | Review | Nov 11 |
-| 403 `access_denied` for a denial | Dan (proposed) | #32 | #31 | Nov 11 |
-| `retryable` in every error body | Bryant | #33, [PR #41](https://github.com/samthropic/BASKD/pull/41) | #31 | Nov 11 |
-| 400 for a body that is not JSON | Sam (proposed) | #34 | #31 | Nov 11 |
-| 502, not retryable, for an uncertain write; remove the `xfail` | Karthik | #35 | Whichever of #35 and PR #38 merges second removes the `xfail` | Nov 11 |
-| Release `v0.2.0` with a fresh-checkout verification | Sam, Bryant or Karthik (coordinator, to choose) | GitHub Release | #31–#35, #37 | Nov 11 |
-| Shared-repo issue for memo question 2; wording PR for question 3 | Arda | Issue and PR on the shared repo | None | Nov 11 |
-| Consumer workflow script, run against the deployed service | To assign | Script in `scripts/` and a recorded run | `v0.2.0`, hosting (question 5) | Nov 11 |
-| Update this document where the implementation changes the plan | Whoever changes the plan | Edits to this file, with a line below | | Each PR |
+| Action | Owner | Output | Status |
+| --- | --- | --- | --- |
+| Adopt the package; run its suite on fakes and on real Google | Arda | PR #38 | Done |
+| Rename the error codes | Arda | PR #36 (#31) | Done |
+| 403 `access_denied` for a denial | Karthik (picked up from Dan) | PR #56 (#32) | Done |
+| `retryable` in every error body | Bryant | PR #41 (#33) | Done |
+| 400 for a body that is not JSON | Sam | PR #54 (#34) | Done |
+| 502, not retryable, for an uncertain write; remove the `xfail` | Karthik | PR #48 (#35); `xfail` removed in PR #38 | Done |
+| Release `v0.2.0` with a fresh-checkout verification | Karthik (coordinator); verification by Sam | GitHub Release `v0.2.0` | This release (#47) |
+| Shared-repo issue for memo question 2; wording PR for question 3 | Arda | Issue and PR on the shared repo | Not done; still open (§9) |
+| Consumer workflow, run against the deployed service | Karthik | The shared HTTP suite's `test_common_consumer_workflow` against prod | Waits for the shared stable tag: our pin, `v0.1.0-rc.1`, does not contain the HTTP suite. The deploy's smoke check runs the same four operations against prod meanwhile |
+| Update this document where the implementation changes the plan | Whoever changes the plan | §12 and the revision history | Done for `v0.2.0` |
+
+## 12. What changed during implementation
+
+The plan above held. These are the places where building it changed or added something, and
+why:
+
+- **A 5xx on a write means "outcome unknown"** (§9 question 1, PR #48). The design left it
+  open. We chose the safe answer: Google may have applied a write it then failed to confirm.
+  Errors raised before anything was sent (a token refresh, DNS, the `events.get` that starts a
+  replace) stay `503`, because nothing can have been written.
+- **The shared suite's "unavailable" fake is a 429, not a 503** (PR #38). After the change
+  above, a 503 on `insert` is "outcome unknown", so it can no longer stand for "unavailable"
+  on every call. A 429 is unavailable on any operation.
+- **An access denial is 403** (PR #56). We had argued for 502 in HW1. `docs/DECISIONS.md`
+  records why we moved, and what the status no longer tells a caller.
+- **The shared suite flagged one of our extensions.** Team 2's first HTTP suite used
+  `location` as its "unknown field", which BASK'D accepts as a documented extension. Team 2
+  changed it to `not_a_contract_field` after our review (OSPSD-Calendar #24).
+- **Readiness is separate from liveness** (PR #52). `/health` never calls Google, so Cloud
+  Run's probes cannot restart healthy instances during a Google outage. `/ready` makes one
+  cheap Google call and answers `503` with the reason.
+- **Hosting is Cloud Run, provisioned with Terraform** (§9 question 5, PRs #49, #50). Releases
+  deploy from a `v*` tag by image digest, behind a smoke check with automatic rollback,
+  drilled on staging (`docs/DEPLOYMENT.md`). One consequence we documented: once a release
+  pins traffic, a Terraform configuration change waits for the next release
+  (`infra/README.md`).
+- **Telemetry and SLOs** (PRs #53, #57). One log line per request, traces with a span for the
+  Google call, a dashboard, and two SLOs for `GET /events/{id}` with a burn-rate alert tested
+  on staging (`docs/OBSERVABILITY.md`, `docs/SLO.md`).
 
 ## Revision history
 
 - 2026-11-04: first version, for the Milestone 2 review (Arda). Issue #39.
 - 2026-11-04: review comments from Karthik, Sam (Team 7) and Leon (Team 2) applied; review
   record filled in (Arda).
+- 2026-11-11: implemented in `v0.2.0`. Answered §9 questions 1, 4 and 5; recorded the
+  actions' outcomes (§11) and what changed during implementation (§12) (Karthik).
