@@ -70,6 +70,26 @@ resource "google_cloud_run_v2_service" "api" {
   # Lets `terraform destroy` remove the service (documented teardown).
   deletion_protection = false
 
+  # Callers mint identity tokens for this audience instead of a URL, so one token works on the
+  # service URL and on a release candidate's tagged URL (deploy.yml smoke-checks the candidate
+  # before it gets traffic).
+  custom_audiences = [local.name]
+
+  # Terraform owns the service's configuration; the deploy workflow owns which image runs and
+  # where traffic goes. `var.image` only seeds the first revision, so a release does not make
+  # the next `terraform plan` want to roll the service back to that image.
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      traffic,
+      template[0].revision,
+      template[0].labels,
+      template[0].annotations,
+      template[0].containers[0].image,
+    ]
+  }
+
   template {
     service_account                  = google_service_account.runtime.email
     max_instance_request_concurrency = var.concurrency

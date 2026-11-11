@@ -1,0 +1,167 @@
+# Ships a release: build the image once from the pushed tag, deploy it to Cloud Run by digest
+# as a candidate with no traffic, smoke-check the candidate against the real calendar, and
+# only then move traffic to it and smoke-check again. If anything fails after the deploy,
+# traffic goes back to the revision that was serving before, the smoke check is rerun
+# against it, and the run fails. The GitHub deployment is marked successful only when every
+# step passed.
+#
+#   v*         -> prod     (service baskd)          e.g. v0.2.0, pushed by the release coordinator
+#   staging-*  -> staging  (service baskd-staging)  disposable, for release and rollback drills
+#
+# Google sign-in is Workload Identity Federation (infra/deploy.tf): no key is stored in GitHub,
+# and each environment's identity accepts only its own tag prefix from this repository.
+# Configuration (env vars, the Calendar key, scaling) comes from Terraform and Secret Manager,
+# never from the image. See docs/DEPLOYMENT.md §5-6 and infra/README.md.
+#
+# Third-party actions are pinned to commit SHAs (the version is in the trailing comment).
+name: Deploy
+
+on:
+  push:
+    tags: ["v*", "staging-*"]
+
+permissions: {}
+
+concurrency:
+  group: deploy-${{ startsWith(github.ref_name, 'staging-') && 'staging' || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, deploy by digest, smoke check, promote
+    if: github.repository == 'samthropic/BASKD'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: ${{ startsWith(github.ref_name, 'staging-') && 'staging' || 'prod' }}
+      url: ${{ steps.promote.outputs.url }}
+    env:
+      PROJECT_ID: baskd-calendar
+      PROJECT_NUMBER: "429735692389"
+      REGION: us-east1
+      SERVICE: ${{ startsWith(github.ref_name, 'staging-') && 'baskd-staging' || 'baskd' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sign in to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ env.SERVICE }}-github/providers/github
+          service_account: ${{ env.SERVICE }}-deploy@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build the image once from this tag and push it
+        id: build
+        run: |
+          image="$REGION-docker.pkg.dev/$PROJECT_ID/$SERVICE/baskd"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$GITHUB_REF_NAME" \
+            --tag "$image:$GITHUB_REF_NAME" .
+          docker push "$image:$GITHUB_REF_NAME"
+          digest=$(gcloud artifacts docker images describe "$image:$GITHUB_REF_NAME" \
+            --format='value(image_summary.digest)')
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Record the revision serving traffic now
+        id: before
+        run: |
+          previous=$(gcloud run services describe "$SERVICE" --region "$REGION" --format=json \
+            | jq -r '[.status.traffic[] | select(.percent == 100)][0].revisionName // empty')
+          echo "Serving before this release: ${previous:-none}"
+          echo "revision=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy by digest as a candidate with no traffic
+        id: deploy
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          tag="rc-${GITHUB_SHA::7}"
+          gcloud run deploy "$SERVICE" --region "$REGION" --image "$IMAGE" \
+            --no-traffic --tag "$tag" --quiet
+          gcloud run services describe "$SERVICE" --region "$REGION" --format=json > service.json
+          revision=$(jq -r --arg t "$tag" '.status.traffic[] | select(.tag == $t) | .revisionName' service.json)
+          url=$(jq -r --arg t "$tag" '.status.traffic[] | select(.tag == $t) | .url' service.json)
+          echo "Candidate $revision at $url"
+          {
+            echo "tag=$tag"
+            echo "revision=$revision"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Identity token for the smoke check
+        id: token
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ env.SERVICE }}-github/providers/github
+          service_account: ${{ env.SERVICE }}-deploy@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+          token_format: id_token
+          id_token_audience: ${{ env.SERVICE }}
+          id_token_include_email: true
+
+      - name: Smoke check the candidate (create, get, replace, delete)
+        env:
+          BASKD_SMOKE_TOKEN: ${{ steps.token.outputs.id_token }}
+          BASKD_SMOKE_LABEL: ${{ github.ref_name }} candidate
+          URL: ${{ steps.deploy.outputs.url }}
+        run: python3 scripts/smoke.py "$URL"
+
+      - name: Move all traffic to the candidate
+        id: promote
+        env:
+          REVISION: ${{ steps.deploy.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" \
+            --to-revisions "$REVISION=100" --quiet
+          url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke check the live service
+        env:
+          BASKD_SMOKE_TOKEN: ${{ steps.token.outputs.id_token }}
+          BASKD_SMOKE_LABEL: ${{ github.ref_name }} live
+          URL: ${{ steps.promote.outputs.url }}
+        run: python3 scripts/smoke.py "$URL"
+
+      - name: Roll back to the revision that was serving before
+        if: failure() && steps.deploy.outcome == 'success' && steps.before.outputs.revision != ''
+        env:
+          PREVIOUS: ${{ steps.before.outputs.revision }}
+          BASKD_SMOKE_TOKEN: ${{ steps.token.outputs.id_token }}
+          BASKD_SMOKE_LABEL: ${{ github.ref_name }} after rollback
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" \
+            --to-revisions "$PREVIOUS=100" --quiet
+          echo "Traffic is back on $PREVIOUS. Rerunning the smoke check against it:"
+          python3 scripts/smoke.py "$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')"
+
+      - name: Remove the candidate tag
+        if: always() && steps.deploy.outcome == 'success'
+        env:
+          TAG: ${{ steps.deploy.outputs.tag }}
+        run: gcloud run services update-traffic "$SERVICE" --region "$REGION" --remove-tags "$TAG" --quiet
+
+      - name: Summary
+        if: always()
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          PREVIOUS: ${{ steps.before.outputs.revision }}
+          CANDIDATE: ${{ steps.deploy.outputs.revision }}
+        run: |
+          {
+            echo "## $GITHUB_REF_NAME → $SERVICE"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Image (by digest) | \`${IMAGE:-not built}\` |"
+            echo "| Serving before | \`${PREVIOUS:-none}\` |"
+            echo "| Candidate | \`${CANDIDATE:-not deployed}\` |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

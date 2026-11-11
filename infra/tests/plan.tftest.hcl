@@ -80,3 +80,39 @@ run "a_mutable_tag_is_rejected" {
 
   expect_failures = [var.image]
 }
+
+run "prod_deploys_only_from_v_tags_of_this_repository" {
+  command = plan
+
+  assert {
+    condition = google_iam_workload_identity_pool_provider.github.attribute_condition == join(" && ", [
+      "assertion.repository_id == '1373519725'",
+      "assertion.ref_type == 'tag'",
+      "assertion.ref.startsWith('refs/tags/v')",
+    ])
+    error_message = "prod's deploy identity must accept only v* tags from this repository."
+  }
+
+  assert {
+    condition     = google_service_account.deploy.account_id != google_service_account.runtime.account_id
+    error_message = "The deploy identity must be separate from the runtime identity."
+  }
+}
+
+run "staging_deploys_only_from_staging_tags" {
+  command = plan
+
+  variables {
+    environment = "staging"
+  }
+
+  assert {
+    condition     = endswith(google_iam_workload_identity_pool_provider.github.attribute_condition, "assertion.ref.startsWith('refs/tags/staging-')")
+    error_message = "staging's deploy identity must not accept release tags, and prod's must not accept drill tags."
+  }
+
+  assert {
+    condition     = google_service_account.deploy.account_id == "baskd-staging-deploy"
+    error_message = "staging must have its own deploy identity."
+  }
+}

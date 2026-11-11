@@ -17,3 +17,13 @@ output "service_url" {
   description = "Base URL of the deployed API (null until an image is deployed)."
   value       = var.image == null ? null : google_cloud_run_v2_service.api[0].uri
 }
+
+output "workload_identity_provider" {
+  description = "Value for workload_identity_provider in .github/workflows/deploy.yml."
+  value       = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "deploy_service_account" {
+  description = "Identity the deploy workflow impersonates (service_account in deploy.yml)."
+  value       = google_service_account.deploy.email
+}

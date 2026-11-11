@@ -78,21 +78,65 @@ Railway would also run the image, with the key in their secret store as
 
 ## 5. Promoting a release
 
-1. Only deploy a **tagged** commit whose CI (including the integration job) is green.
-2. Deploy with the tag in the image tag / revision name so a rollback is `redeploy previous
-   tag`.
-3. After deploying: `curl https://<host>/health` → `provider: google`; run
-   `python scripts/demo.py https://<host>` (it creates and deletes one event in the test
-   calendar).
-4. Record the deployment in the GitHub Release ("Deployed to … on …").
+Releases go out through [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Nobody
+runs `gcloud run deploy` by hand.
+
+1. The release coordinator pushes an annotated `v*` tag on a commit whose CI is green
+   (`AGENTS.md` §5). A `staging-*` tag runs the same pipeline against `baskd-staging`.
+2. The workflow signs in to Google with Workload Identity Federation as the environment's
+   **deploy** identity (`infra/deploy.tf`). No key is stored in GitHub. The identity accepts
+   only this repository's tags with that environment's prefix, so a drill tag can never deploy
+   to prod.
+3. It builds the image **once** from the tagged commit and `uv.lock`, pushes it to Artifact
+   Registry, and deploys it **by digest** (`@sha256:…`) as a candidate revision with **no
+   traffic**, under a temporary `rc-<sha>` tag URL.
+4. `scripts/smoke.py` runs health, create, get, replace and delete against the candidate on
+   the real calendar, and deletes what it made.
+5. Only if that passes does traffic move to the candidate. The smoke check then runs again
+   against the live URL.
+6. The GitHub deployment for the environment (repository → Environments) is marked
+   successful only when every step passed. The run summary shows the commit, the digest, and
+   the revisions before and after.
+
+Configuration does not come from the image. Environment variables, the mounted Calendar key,
+scaling and the runtime identity come from Terraform and Secret Manager. Terraform ignores the
+running image and traffic split (`lifecycle` in `infra/main.tf`), so a release does not make
+the next `terraform plan` want to change anything.
 
 ## 6. Rollback and what it does not undo
 
-Rolling back means redeploying the previous tag; configuration is versioned with the code, so
-nothing else changes unless the release notes listed a **setup or configuration change** (new
-env var, new secret, new calendar). Check those first.
+**Automatic.** If the smoke check fails, or anything fails after the candidate was deployed,
+the workflow sends 100% of traffic back to the revision that was serving before the run,
+reruns the smoke check against it, and fails the run. A candidate that fails its smoke check
+never receives traffic.
 
-What rolling back cannot undo: events created, modified, or deleted in the calendar by the
-defective version. The Google Calendar UI's trash holds deleted events for about 30 days and
-can restore them manually; there is no API for bulk restore in our service. A defective
-release issue (see `AGENTS.md` §5) must state which events, if any, were affected.
+**By hand** (a problem found after a release passed):
+
+```bash
+gcloud run revisions list --service baskd --region us-east1     # newest first
+gcloud run services update-traffic baskd --region us-east1 --to-revisions <previous>=100
+BASKD_SMOKE_TOKEN=$(gcloud auth print-identity-token) python scripts/smoke.py "$(gcloud run services describe baskd --region us-east1 --format='value(status.url)')"
+```
+
+Old revisions keep their image digest and configuration, so this is a traffic switch, not a
+rebuild. Then fix forward with a new tag. If the release notes listed a **setup or
+configuration change** (new env var, new secret, new calendar), roll that back in Terraform as
+well.
+
+What rolling back cannot undo: events created, modified or deleted in the calendar by the
+defective version, including a write that timed out and may have been stored anyway. The
+Google Calendar UI's trash holds deleted events for about 30 days and can restore them by hand;
+our service has no bulk restore. A defective release issue (see `AGENTS.md` §5) must state
+which events, if any, were affected.
+
+### Rollback drill (recorded)
+
+Run in the disposable `baskd-staging` service:
+
+1. `staging-drill-good`: a good release, deployed and promoted. _Run: TBD_
+2. `staging-drill-broken`: a deliberately broken release (replace answers 500). The candidate's
+   smoke check fails at `replace`, traffic stays on (is sent back to) the good revision, the
+   smoke check passes against it, and the run fails. _Run: TBD_
+
+The smoke check deletes its own events even when it fails, so the drill leaves nothing in the
+calendar.
