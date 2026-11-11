@@ -32,3 +32,8 @@ output "dashboard_url" {
   description = "Level 3 dashboard: traffic, errors, latency and saturation per operation."
   value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${basename(google_monitoring_dashboard.service.id)}?project=${var.project_id}"
 }
+
+output "slo_url" {
+  description = "Level 4: the service's SLOs and their error budgets in Cloud Monitoring."
+  value       = "https://console.cloud.google.com/monitoring/services/${google_monitoring_custom_service.api.service_id}?project=${var.project_id}"
+}

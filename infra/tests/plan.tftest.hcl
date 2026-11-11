@@ -147,3 +147,52 @@ run "telemetry_is_wired_and_metric_labels_stay_bounded" {
     error_message = "Metric labels must stay bounded: no ids or paths."
   }
 }
+
+run "slo_counts_only_failures_that_are_ours_and_pages_a_real_inbox" {
+  command = plan
+
+  variables {
+    alert_emails = ["oncall@nyu.edu"]
+  }
+
+  assert {
+    condition     = strcontains(google_monitoring_slo.get_availability.request_based_sli[0].good_total_ratio[0].total_service_filter, "NOT metric.label.\"category\"=\"invalid_input\"")
+    error_message = "A caller's invalid request must not count against our availability."
+  }
+
+  assert {
+    condition = alltrue([
+      for category in ["provider_failure", "access_denied", "internal"] :
+      strcontains(google_monitoring_slo.get_availability.request_based_sli[0].good_total_ratio[0].bad_service_filter, "\"${category}\"")
+    ])
+    error_message = "Provider failures, access denials and bugs are the bad events."
+  }
+
+  assert {
+    condition     = !strcontains(google_monitoring_slo.get_availability.request_based_sli[0].good_total_ratio[0].bad_service_filter, "not_found")
+    error_message = "A 404 for a missing event is a correct answer, not a failure."
+  }
+
+  assert {
+    condition     = google_monitoring_slo.get_latency.request_based_sli[0].distribution_cut[0].range[0].max == 1000
+    error_message = "The latency threshold comes from the measured p95 (docs/SLO.md)."
+  }
+
+  assert {
+    condition     = length(google_monitoring_notification_channel.email) == 1 && length(google_monitoring_alert_policy.get_availability_fast_burn.conditions) == 2
+    error_message = "The alert must page the listed inbox and check both the 1-hour and 5-minute windows."
+  }
+}
+
+run "staging_has_its_own_slo_service" {
+  command = plan
+
+  variables {
+    environment = "staging"
+  }
+
+  assert {
+    condition     = google_monitoring_custom_service.api.service_id == "baskd-staging-api"
+    error_message = "A staging drill must never burn prod's error budget."
+  }
+}
