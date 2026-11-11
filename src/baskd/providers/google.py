@@ -165,6 +165,12 @@ class GoogleCalendarProvider:
         ]
         return EventPage(items=items, next_cursor=resource.get("nextPageToken"))
 
+    def check_ready(self) -> None:
+        # The cheapest call that proves the key works and the calendar is shared with it:
+        # one event, and only the response's `kind` field.
+        params = {"calendarId": self._calendar_id, "maxResults": 1, "fields": "kind"}
+        self._execute(self._events().list(**params))
+
     def replace_event(self, event_id: str, data: EventInput) -> Event:
         # Fetch-modify-update is Google's documented way to edit an event: sending the
         # whole resource back preserves fields this API does not manage (reminders, ...).

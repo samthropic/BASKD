@@ -25,7 +25,7 @@ flowchart TB
 
     subgraph HTTP["HTTP layer · src/baskd/api/"]
         Events["events.py<br/>POST/GET/PUT/DELETE /events"]
-        Health["health.py<br/>GET /health"]
+        Health["health.py<br/>GET /health · GET /ready"]
         Deps["dependencies.py<br/>get_provider() → Provider"]
         ApiErr["errors.py<br/>envelope + exception handlers"]
     end
@@ -124,7 +124,8 @@ In words:
 
 The other endpoints follow the same path; only the provider method differs
 (`get_event`, `list_events`, `replace_event`, `delete_event`). `GET /health` stops at the
-handler and never calls the provider.
+handler and never calls the provider; `GET /ready` calls `provider.check_ready()` (one
+cheap read) and answers 503 with the error code when it raises.
 
 ## 2. Modules
 
