@@ -72,3 +72,27 @@ variable "github_repository_id" {
   type        = string
   default     = "1373519725"
 }
+
+variable "alert_emails" {
+  description = "Where the SLO burn-rate alert is sent, e.g. [\"someone@nyu.edu\"]. Empty: the alert still opens incidents in Cloud Monitoring, but notifies no one."
+  type        = list(string)
+  default     = []
+}
+
+variable "availability_goal" {
+  description = "Share of eligible GET /events/{id} requests that must not fail on our side, over 28 days (docs/SLO.md)."
+  type        = number
+  default     = 0.99
+}
+
+variable "latency_threshold_ms" {
+  description = "A successful GET /events/{id} is fast if the service answers within this many ms. Measured p95 on staging: 555 ms (docs/SLO.md)."
+  type        = number
+  default     = 1000
+}
+
+variable "latency_goal" {
+  description = "Share of successful GET /events/{id} requests that must be faster than latency_threshold_ms, over 28 days."
+  type        = number
+  default     = 0.95
+}

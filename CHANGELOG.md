@@ -61,6 +61,10 @@ Release notes on GitHub are built from the matching section here.
   (what/version/health/logs/rollback), a BASK'D-specific failure runbook, the Terraform
   resources that matter, monthly cost and teardown date, blast radius of deploy vs runtime
   identities, and signals → actions for the dashboard panels and SLO alert. (#46)
+- Level 4 (`docs/SLO.md`, `infra/slo.tf`): availability and latency SLOs for
+  `GET /events/{id}` (99% not failed on our side; 95% of successes under 1000 ms; both over
+  28 days), built on the request metrics, plus a fast-burn alert (14.4x over both 1 hour and
+  5 minutes) to `alert_emails`, and an error budget policy. (#45)
 - `GET /ready`: readiness, separate from `/health` (liveness). It makes one cheap provider
   call and answers `503` with the error code as `reason` while requests would fail. Probes
   keep using `/health`, so a Google outage cannot cause a restart loop. (#42)

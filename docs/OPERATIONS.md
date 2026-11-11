@@ -2,9 +2,9 @@
 
 How to run BASK'D in production without reading the source or CI config. Owner: Sam (#46).
 Provisioning and teardown live in [`infra/README.md`](../infra/README.md); release and
-rollback live in [`DEPLOYMENT.md`](DEPLOYMENT.md). Telemetry walkthroughs land in
-[`OBSERVABILITY.md`](OBSERVABILITY.md) with #44; SLOs and the burn-rate alert land in
-`SLO.md` with #45.
+rollback live in [`DEPLOYMENT.md`](DEPLOYMENT.md). Telemetry walkthroughs are in
+[`OBSERVABILITY.md`](OBSERVABILITY.md); SLOs, the burn-rate alert and the error budget policy
+are in [`SLO.md`](SLO.md).
 
 Environments: **prod** service `baskd`, **staging** service `baskd-staging`, both in project
 `baskd-calendar`, region `us-east1`.
@@ -73,10 +73,9 @@ Raise unexpected bills on the course `#help` channel early.
 
 ## 6. Signals → actions
 
-Dashboard and richer request logs ship with #44 (`infra/observability.tf`,
-[`OBSERVABILITY.md`](OBSERVABILITY.md)); open the board with `terraform output dashboard_url`.
-The symptom alert ships with #45 (`SLO.md`). Until those land, use Logs Explorer + Cloud Run
-revisions + the deploy workflow.
+The dashboard and request logs are defined in `infra/observability.tf` and described in
+[`OBSERVABILITY.md`](OBSERVABILITY.md); open the board with `terraform output dashboard_url`.
+The symptom alert is in `infra/slo.tf`, described in [`SLO.md`](SLO.md#the-alert).
 
 | Signal | What it means | What to do differently |
 | --- | --- | --- |
@@ -86,7 +85,7 @@ revisions + the deploy workflow.
 | Latency p95 (failures) | Fast reject vs hang | Failures near 10 s → Google timeout |
 | Saturation (concurrent req / instance vs limit 20) | Instances full | Near 20 with `max_instances` running: raise `concurrency` or `max_instances` in Terraform. That apply creates a new revision with **no** traffic until the next release or `gcloud run services update-traffic … --to-latest` (`infra/README.md`) |
 | Requests by release | Which digest is live | Errors that start with a new release → roll back ([`DEPLOYMENT.md`](DEPLOYMENT.md) §6) |
-| Burn-rate / SLO alert (#45) | Error budget for `GET /events/{id}` is burning fast | Open the dashboard, confirm category, follow the matching runbook row; pause risky deploys per the error-budget policy in `SLO.md` |
+| Burn-rate / SLO alert ([`SLO.md`](SLO.md#the-alert)) | Error budget for `GET /events/{id}` is burning fast | Open the dashboard, confirm category, follow the matching runbook row; pause risky deploys per the [error budget policy](SLO.md#error-budget-policy) |
 
 ### From a red panel to one request (after #44)
 
@@ -100,5 +99,5 @@ revisions + the deploy workflow.
 - Deploy + rollback drill: [`DEPLOYMENT.md`](DEPLOYMENT.md)
 - Credentials and calendar sharing: [`HUMAN_STEPS.md`](HUMAN_STEPS.md)
 - Telemetry detail: [`OBSERVABILITY.md`](OBSERVABILITY.md) (#44)
-- SLOs and alert: `SLO.md` (#45)
+- SLOs, alert and error budget policy: [`SLO.md`](SLO.md)
 - Release process: [`AGENTS.md`](../AGENTS.md) §5
