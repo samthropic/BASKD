@@ -63,6 +63,7 @@ jobs:
           docker build --platform linux/amd64 \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.version=$GITHUB_REF_NAME" \
+            --build-arg "BASKD_COMMIT=$GITHUB_SHA" \
             --tag "$image:$GITHUB_REF_NAME" .
           docker push "$image:$GITHUB_REF_NAME"
           digest=$(gcloud artifacts docker images describe "$image:$GITHUB_REF_NAME" \

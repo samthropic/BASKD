@@ -130,7 +130,7 @@ Google in `test_create_get_list_replace_delete`.
 
 *Contract:* the README [error table](README.md#errors): one envelope; codes that separate
 invalid input, missing resource, access denial, provider failure and bugs; retry guidance;
-`X-Request-ID` on every response; one sanitized `request_failed` log line per failure.
+`X-Request-ID` on every response; one sanitized log line per request (`request_failed` for a failure), with a trace id.
 
 *Cases:* each error class through each of the five routes
 (`test_api_errors.py::test_domain_errors_map_to_status_and_code`); spec 5.6's four cases
