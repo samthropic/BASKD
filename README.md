@@ -78,6 +78,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | Method & path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
 | `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
+| `GET /ready` | Readiness: can requests succeed right now? Makes one cheap provider call (one event, one field). | `200 {"status":"ready","provider":"google","version":"…"}` | `503 {"status":"not_ready",…,"reason":"<error code>"}` |
 | `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `502`, `503` |
 | `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `502`, `503` |
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `502`, `503` |
@@ -159,8 +160,8 @@ Calendar API contract, so a client can branch on them against any of the three s
 | `not_found` | 404 | missing resource | get/replace/delete of an id that does not exist or was deleted | No |
 | `http_error` | 404 / 405 | missing resource / invalid input | Unknown route (404) or wrong method (405) | No |
 | `access_denied` | 502 | access denied | The provider denied *the service* (bad or revoked key, calendar not shared, permission removed). The API has no caller identities, so this is the only denial it reports; an operator must fix it | No |
-| `provider_unavailable` | 503 + `Retry-After: 5` | provider failure | Timeout, network error, provider 5xx/429 or exhausted quota | Yes, after `Retry-After`, for reads, `PUT` and `DELETE` (a repeated `DELETE` that already succeeded returns 404). A `POST` that timed out may have created the event: list the window before re-sending, or you may get a duplicate |
-| `provider_error` | 502 | provider failure | Any other unexpected provider response | Not blindly: the outcome is unknown, so a retried create may duplicate. Re-read (`GET`/list) first |
+| `provider_unavailable` | 503 + `Retry-After: 5` | provider failure | A read or delete that timed out, hit a network error, a provider 5xx/429 or exhausted quota; a create or replace that never reached the provider or was rate-limited | Yes, after `Retry-After` (a repeated `DELETE` that already succeeded returns 404) |
+| `provider_error` | 502 | provider failure | A create or replace that timed out, lost its connection or got a provider 5xx, so it may or may not have been applied; any other unexpected provider response | Not blindly: the outcome is unknown, so a retried create may duplicate. Re-read (`GET`/list) first |
 | `internal_error` | 500 | bug | An unexpected exception in the service | No: report it with the `X-Request-ID` |
 
 A failed operation is never reported as a success, and a request rejected with 4xx before

@@ -15,6 +15,12 @@ Release notes on GitHub are built from the matching section here.
 - Every error body now has a required boolean `retryable` (joint contract rule 4). It is
   `true` only for `provider_unavailable`. Clients that compare a whole error body must
   update. (#33)
+- A create or replace that times out, loses its connection or gets a 5xx from Google now
+  returns `502 provider_error` (not retryable) instead of `503 provider_unavailable` with
+  `Retry-After`: the write may already have been applied, so re-sending it could create a
+  duplicate. Reads and deletes still return 503 (joint contract rule 6, #35).
+  **Migration:** treat a 502 on `POST` or `PUT` as "outcome unknown". Read the event (or list
+  the window, for a create) before sending the write again.
 
 ### Added
 - Level 3 telemetry (#44). One JSON log line per request (`request_succeeded` or
@@ -35,6 +41,9 @@ Release notes on GitHub are built from the matching section here.
   Identity Federation as a deploy identity separate from the runtime one. `staging-*` tags
   run the same pipeline on `baskd-staging`. PR CI now checks `infra/` (`terraform fmt`,
   `validate`, `test`). (#43)
+- `GET /ready`: readiness, separate from `/health` (liveness). It makes one cheap provider
+  call and answers `503` with the error code as `reason` while requests would fail. Probes
+  keep using `/health`, so a Google outage cannot cause a restart loop. (#42)
 
 ## [0.1.0] - 2026-10-21
 

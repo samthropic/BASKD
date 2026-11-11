@@ -160,10 +160,12 @@ removed.
 
 What the tests do not establish, so nobody claims they do:
 
-- **Uncertain writes.** No test simulates Google accepting a create and the response being
-  lost. We have no automatic retries, so the service cannot duplicate an event by itself, but
-  a caller retrying a timed-out `POST` can. The README tells callers to list before
-  re-sending. Owner if we add retries or idempotency keys: whoever takes that extension.
+- **Uncertain writes.** Unit tests (fakes only) show that a create or replace that times
+  out or gets a Google 5xx returns `502 provider_error`, not a retryable 503; no live test
+  makes Google accept a write and lose the response. We do not retry, but `httplib2`, the
+  SDK's transport, re-sends a request once when the connection closes without any answer,
+  so in that rare case a create could be sent twice. Owner if we add idempotency keys:
+  whoever takes that extension.
 - **Responsiveness under a slow provider.** Handlers are synchronous and run in FastAPI's
   thread pool, so one slow Google call should not block other requests. No test holds a
   provider call open and shows an unrelated request completing (spec 1.3).
