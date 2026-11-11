@@ -58,29 +58,81 @@ operations share the same instances and the same concurrency limit.
    child `google calendar.events.<method>` span is the call to Google, with Google's HTTP
    status. Time outside that child span is our own work (validation, conversion, logging).
 
-## Recorded walkthrough on staging (2026-11-11, release `0.1.0+f393a14`)
+## Things that look wrong but aren't
+
+These came up in the first walkthrough (below):
+
+- **Dashboard says "No data" on "Last 1 hour".** Widen the range (for example "Last 3 hours") and
+  reload. Log-based metrics only have points for minutes with traffic.
+- **A trace's first row is `(Missing span ID …)`.** That parent is Google's front end, which is
+  not exported to our project. A 422 can also have no Cloud Run `/events` span, only the app's.
+- **Trace API says `Trace bucket not found`.** That is normal until the first span arrives.
+- **Right after the `roles/cloudtrace.agent` grant, the app still logs `Error while writing to
+  Cloud Trace … PERMISSION_DENIED`.** The grant takes a couple of minutes to reach the
+  service. Requests sent about 50 s after the grant were not traced; requests 2.5 minutes after
+  were.
+
+## Making a provider failure on purpose (staging only)
+
+Put a copy of the running service with a 1 ms Google timeout behind a `fault` tag, with no
+traffic. Normal traffic never reaches it:
+
+```bash
+gcloud run services update baskd-staging --region us-east1 --no-traffic --tag fault \
+  --update-env-vars BASKD_GOOGLE_TIMEOUT_SECONDS=0.001
+FAULT_URL=$(gcloud run services describe baskd-staging --region us-east1 --format=json \
+  | jq -r '.status.traffic[] | select(.tag == "fault") | .url')
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  -H "X-Request-ID: provider-failure-test" "$FAULT_URL/events?limit=1"   # 503
+# Clean up: drop the tag, then put the normal timeout back on the template.
+gcloud run services update-traffic baskd-staging --region us-east1 --remove-tags fault
+gcloud run services update baskd-staging --region us-east1 --no-traffic \
+  --update-env-vars BASKD_GOOGLE_TIMEOUT_SECONDS=10
+```
+
+The `--no-traffic` on the cleanup matters: the deploy pipeline pins traffic to a named revision,
+so a plain `services update` would leave it there anyway, but the flag makes that explicit. The
+next staging release replaces these revisions.
+
+## Recorded runs on staging (2026-11-11, release `0.1.0+f393a14`)
 
 Deployed with tag `staging-telemetry-1` (deploy run 43093116401: smoke checks passed before and
-after the traffic move). Requests sent with `X-Request-ID` set so they are easy to find:
+after the traffic move).
 
-| Case | Request | Response | Log line (`jsonPayload`) | Trace |
+### Walkthrough by a teammate who didn't write it (rubric §15.3)
+
+Arda sent three requests with `X-Request-ID` set. For each one, Arda started from the
+**BASK'D (staging)** dashboard, found the log line, then opened its trace (Logs Explorer →
+trace chip → "View trace details"). Full write-up: Arda's approval on #53.
+
+| Case | Response | Log line | Trace | Spans |
 | --- | --- | --- | --- | --- |
-| Success | `POST /events` | 201 | `request_succeeded`, `create_event`, 201, `latency_ms` 865.2, `INFO` | `c825277add16c5af1336d243c57e1670` |
-| Invalid request | `POST /events` with `end` before `start` | 422 `invalid_input` | `request_failed`, `create_event`, `invalid_input`, `provider_involved: false`, 1.7 ms, `WARNING` | `656479dd7f4755524f12a19241002378` |
-| Provider failure | `GET /events?limit=1` on a revision with `BASKD_GOOGLE_TIMEOUT_SECONDS=0.001`, reached through a `fault` tag with no traffic | 503 `provider_unavailable`, `Retry-After: 5` | `request_failed`, `list_events`, `provider_failure`, `retryable: true`, 150.2 ms, `ERROR`; the Google adapter's line before it says `Google Calendar unreachable: TimeoutError` | `0680ed18df1c352b746e7a8fb485f1bf` |
+| Success: `POST /events` | 201 | `walkthrough-success-2`, `INFO`, `create_event`, `provider_involved: true`, 942.7 ms | `74f348ab2a01ba7aec32f58a720adf75` | Cloud Run `/events` 964 ms → `POST /events` 943 ms → `google calendar.events.insert` 935 ms |
+| Invalid: `end` before `start` | 422 `invalid_input` | `walkthrough-invalid-2`, `WARNING`, `invalid_input`, `provider_involved: false`, 1.3 ms | `7664497410dbdecdce2beff1b4b5d2f0` | `POST /events` 1.3 ms with `baskd.error=invalid_input`; no Google span |
+| Provider failure (`fault` recipe above) | 503 `provider_unavailable` | `walkthrough-provider-failure-2`, `ERROR`, `provider_failure`, `retryable: true`, 113.8 ms | `2fd1583a4f47c7c4e2dc7f2a25cbadf6` | Cloud Run `/events` 137 ms → `GET /events` 113 ms (`baskd.error=provider_unavailable`) → `google calendar.events.list` 82 ms |
 
-The `<name>_requests` metric counted all of them (and the smoke checks) with labels
-`operation`, `outcome`, `category`, `status` and `release` only. Afterwards the `fault` tag
-was removed and the timeout set back to 10; traffic never left the normal revision.
+How Arda read them:
+- **Success:** Google's insert took 935 of the 943 ms. The time is Google's, not ours.
+- **Invalid:** there's no Google span and `provider_involved` is false. It's the caller's
+  problem, so there's nothing to fix.
+- **Provider failure:** the Google span takes most of the time, and the server span carries
+  `provider_unavailable`. It's a Google problem, not ours.
 
-**Not yet shown:** the traces themselves. The runtime identity's `roles/cloudtrace.agent`
-grant needs a project Owner (an Editor gets 403 on project IAM), so on this run the app logged
-`Error while writing to Cloud Trace` and no spans arrived. The span structure is covered by
-`tests/unit/test_google_provider.py::test_trace_shows_the_google_call_as_a_child_span`. Once
-the grant is applied, rerun the three requests and add their trace screenshots here.
+The "Things that look wrong but aren't" section above is where Arda needed help.
 
-A teammate who didn't write this (rubric §15.3) still has to do the walkthrough above from the
-dashboard alone and say where they needed help.
+### First run, before the trace role
+
+Bryant's run, before `roles/cloudtrace.agent` was granted. Logs and metrics were complete, but
+no spans arrived:
+
+| Case | Response | Log line | Trace id in the log |
+| --- | --- | --- | --- |
+| Success | 201 | `walkthrough-success`, `INFO`, `create_event`, 865.2 ms | `c825277add16c5af1336d243c57e1670` |
+| Invalid request | 422 | `walkthrough-invalid`, `WARNING`, `invalid_input`, `provider_involved: false`, 1.7 ms | `656479dd7f4755524f12a19241002378` |
+| Provider failure | 503 | `walkthrough-provider-failure`, `ERROR`, `provider_failure`, 150.2 ms; the line before it says `Google Calendar unreachable: TimeoutError` | `0680ed18df1c352b746e7a8fb485f1bf` |
+
+In both runs, the `baskd-staging_requests` metric counted every request with only `operation`,
+`outcome`, `category`, `status` and `release` as labels.
 
 ## Safety and limits
 
@@ -94,7 +146,9 @@ dashboard alone and say where they needed help.
 - `latency_ms` is measured inside the app. It cannot see time spent in Cloud Run's front end, a
   cold start before the app is up, or requests Cloud Run rejected before they reached the app
   (for example a missing identity token, which is a 403 from Cloud Run itself).
-- `/health` is not logged or traced, so probes don't show up as traffic.
+- `/health` is not logged or traced, so Cloud Run's probes don't show up as traffic. `/ready`
+  is logged and traced (operation `ready`): it calls Google and only operators and smoke checks
+  use it.
 - Cost: log-based metrics and the dashboard are free at this volume. Cloud Logging's free
   allotment is 50 GiB a month, and one request line is about 0.5 KB. `cpu_idle = false` keeps an
   instance billed until Cloud Run stops it, about 15 minutes after the last request. Owner:
