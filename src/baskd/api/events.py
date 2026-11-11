@@ -127,7 +127,8 @@ def get_event(event_id: EventId, provider: Provider) -> Event:
     ),
 )
 def replace_event(event_id: EventId, data: EventInput, provider: Provider) -> Event:
-    return provider.replace_event(event_id, data)
+    # Rollback drill only (staging-drill-broken tag); never merged.
+    raise RuntimeError("drill: deliberately broken release")
 
 
 @router.delete(
