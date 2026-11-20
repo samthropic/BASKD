@@ -96,14 +96,20 @@ def log_failure(
     error: str,
     category: str,
     retryable: bool,
+    failed_step: str | None = None,
 ) -> None:
-    """Record why the request failed; its log line carries these fields."""
+    """Record why the request failed; its log line carries these fields.
+
+    ``failed_step`` names the HW3 workflow step that failed (never ids or content).
+    """
     request.state.failure = {
         "status": status,
         "error": error,
         "category": category,
         "retryable": retryable,
     }
+    if failed_step is not None:
+        request.state.failure["failed_step"] = failed_step
 
 
 def _finish(
@@ -138,6 +144,8 @@ def _finish(
     fields["provider_involved"] = bool(getattr(request.state, "provider_called", False))
     if failure:
         fields["retryable"] = failure["retryable"]
+        if "failed_step" in failure:
+            fields["failed_step"] = failure["failed_step"]
     fields |= {
         "method": request.method,
         "route": route_path,

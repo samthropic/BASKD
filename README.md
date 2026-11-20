@@ -86,6 +86,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `403`, `502`, `503` |
 | `PUT /events/{id}` | Replace every client-editable field | `200` event | `404`, `422`, `400`, `403`, `502`, `503` |
 | `DELETE /events/{id}` | Delete | `204` | `404` (also when already deleted), `403`, `502`, `503` |
+| `POST /workflows/meeting-prep` | HW3: create the event, save its agenda in the configured storage, open a prep issue in the configured tracker ([below](#the-hw3-workflow-meeting-prep)) | `201 {"event":…,"document":…,"issue":…,"steps":[…]}` | `422` invalid body, `400`, `403`, `404` (unknown `event_id`), `502`, `503`; failures add `failed_step` and `completed` |
 
 An event looks like:
 
@@ -142,6 +143,38 @@ Rules every client can rely on (each is enforced by a test):
   so an invalid body is `422` even for an unknown id.
 - Every error has one shape, listed under [Errors](#errors) below.
 - URL gotcha: a `+` in a query-string timestamp must be percent-encoded (`%2B`), or use `Z`.
+
+### The HW3 workflow: meeting prep
+
+`POST /workflows/meeting-prep` runs three fixed steps, each through a shared contract. The
+implementations behind storage and the issue tracker are chosen by configuration (see
+[Configuration](#configuration)); `DESIGN.md` has the reasoning.
+
+| Step | Contract call | Reused when |
+| --- | --- | --- |
+| `create_event` | our calendar, `CalendarService.create` (or `get` with `event_id`) | `event_id` is given |
+| `save_agenda` | `DocumentStorage.create("/baskd/meeting-prep/<event id>.md")` | the file exists (`ConflictError`): the first saved agenda wins |
+| `create_issue` | `IssueProvider.create_issue("Prep: <title> [evt:<event id>]")` | an issue among the newest 100 carries the `[evt:<event id>]` tag |
+
+```bash
+curl -X POST localhost:8000/workflows/meeting-prep -H 'Content-Type: application/json' \
+  -d '{"title": "Design review: HW3", "start": "2026-11-24T15:00:00Z",
+       "end": "2026-11-24T15:30:00Z", "agenda": "1. Walk through DESIGN.md"}'
+```
+
+Nothing is rolled back and the service never retries on its own. A failure returns the usual
+error envelope plus the step that failed and what already exists:
+
+```json
+{"error": {"code": "provider_unavailable", "message": "Storage: …", "retryable": true,
+           "failed_step": "save_agenda",
+           "completed": [{"step": "create_event", "id": "abc123", "reused": false}]}}
+```
+
+To finish, send the same body again with `"event_id": "abc123"`: the event is read instead
+of created, and each finished step is found (`reused: true`) instead of repeated.
+`retryable: false` with `provider_error` at `create_issue` means the issue may have been
+created; the resumed run finds it by its tag before creating one.
 
 ### Errors
 
