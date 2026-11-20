@@ -8,6 +8,11 @@ output "calendar_key_secret" {
   value       = google_secret_manager_secret.calendar_key.secret_id
 }
 
+output "workflow_secrets" {
+  description = "HW3: Secret Manager secrets for the test accounts' Dropbox and Trello credentials, by the variable each one becomes (scripts/add_workflow_secrets.sh fills them)."
+  value       = { for variable, secret in google_secret_manager_secret.workflow : variable => secret.secret_id }
+}
+
 output "runtime_service_account" {
   description = "Identity the container runs as."
   value       = google_service_account.runtime.email

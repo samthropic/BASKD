@@ -5,6 +5,25 @@ locals {
 
   key_mount_dir = "/run/secrets/baskd"
   key_file      = "service-account.json"
+
+  # HW3: the other teams' packages read these variables themselves. Each one is a secret
+  # (key = the variable, value = the secret's name suffix). Only the chosen implementation's
+  # variables are given to the container, so a secret without a version yet cannot break a
+  # revision that does not use it.
+  dropbox_secrets = {
+    DROPBOX_APP_KEY       = "dropbox-app-key"
+    DROPBOX_APP_SECRET    = "dropbox-app-secret"
+    DROPBOX_REFRESH_TOKEN = "dropbox-refresh-token"
+  }
+  trello_secrets = {
+    TRELLO_API_KEY = "trello-api-key"
+    TRELLO_TOKEN   = "trello-token"
+  }
+  workflow_secrets = merge(local.dropbox_secrets, local.trello_secrets)
+  workflow_secret_env = merge(
+    contains(["team3", "team1"], var.workflow_storage) ? local.dropbox_secrets : {},
+    var.workflow_issues == "team4" ? local.trello_secrets : {},
+  )
 }
 
 # APIs this stack needs. They stay enabled on destroy: the Calendar API key and other
@@ -62,6 +81,27 @@ resource "google_secret_manager_secret_iam_member" "runtime_reads_key" {
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# HW3: the test accounts' Dropbox and Trello credentials. As with the Calendar key, Terraform
+# creates only empty secrets; the values are added with scripts/add_workflow_secrets.sh, so
+# they never enter the Terraform state, the repository or CI output.
+resource "google_secret_manager_secret" "workflow" {
+  for_each  = local.workflow_secrets
+  secret_id = "${local.name}-${each.value}"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_reads_workflow" {
+  for_each  = google_secret_manager_secret.workflow
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # Lets the app export its spans to Cloud Trace (BASKD_GCP_PROJECT). Write-only: it cannot
 # read traces back. Logs need no role: Cloud Run collects stdout itself.
 resource "google_project_iam_member" "runtime_writes_traces" {
@@ -92,6 +132,11 @@ resource "google_cloud_run_v2_service" "api" {
   # template.revision is not ignored: ignoring it made Terraform resend the last deployed
   # revision's name with a changed template, which Cloud Run rejects (409, #44).
   lifecycle {
+    precondition {
+      condition     = var.workflow_issues != "team4" || var.trello_list_id != null
+      error_message = "workflow_issues = \"team4\" needs trello_list_id."
+    }
+
     ignore_changes = [
       client,
       client_version,
@@ -144,6 +189,35 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "BASKD_GCP_PROJECT"
         value = var.project_id
       }
+      # HW3: which team's implementation backs storage and the issue tracker. Changing these
+      # is the whole implementation swap; the next deploy rolls it out (docs/DEPLOYMENT.md).
+      env {
+        name  = "BASKD_WORKFLOW_STORAGE"
+        value = var.workflow_storage
+      }
+      env {
+        name  = "BASKD_WORKFLOW_ISSUES"
+        value = var.workflow_issues
+      }
+      dynamic "env" {
+        for_each = var.workflow_issues == "team4" ? [var.trello_list_id] : []
+        content {
+          name  = "TRELLO_LIST_ID"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.workflow_secret_env
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.workflow[env.key].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
 
       resources {
         limits = {
@@ -191,7 +265,10 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.runtime_reads_key]
+  depends_on = [
+    google_secret_manager_secret_iam_member.runtime_reads_key,
+    google_secret_manager_secret_iam_member.runtime_reads_workflow,
+  ]
 }
 
 # Who may call it. Private by default; add teammates and graders in `invokers`.

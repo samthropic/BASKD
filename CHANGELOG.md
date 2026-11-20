@@ -6,7 +6,17 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Setup and configuration
+
+- HW3 deployment (#67): Terraform variables `workflow_storage`, `workflow_issues` and
+  `trello_list_id` set `BASKD_WORKFLOW_STORAGE`, `BASKD_WORKFLOW_ISSUES` and `TRELLO_LIST_ID`
+  on Cloud Run. Five new Secret Manager secrets hold the Dropbox and Trello credentials; only
+  the chosen implementation's secrets are injected. Fill them with
+  `scripts/add_workflow_secrets.sh prod|staging` before switching away from `memory`.
+  `infra/README.md` ("Switching the HW3 implementations") covers the swap and failure demos.
+- `docs/DEPLOYMENT.md` §4 records who may call the deployed service (`invokers`, by staff
+  email or `domain:nyu.edu`); `docs/HUMAN_STEPS.md` §8 covers creating the Dropbox and Trello
+  test accounts (#62).
 
 ## [0.2.0] - 2026-11-11
 

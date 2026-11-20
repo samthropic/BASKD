@@ -133,3 +133,59 @@ and consider disabling merge commits.
 - [ ] GitHub secrets set; manual CI run shows the integration job green
 - [ ] Branch protection on `main` enabled
 - [ ] Roles in §0 filled in and copied to `docs/TEAM_AGREEMENT.md`
+
+## 8. HW3: the Dropbox and Trello test accounts (#62)
+
+The HW3 workflow uses Team 3's or Team 1's Dropbox storage and Team 4's Trello issue tracker
+with **one test account each**. Use throwaway accounts made for the course, never anyone's
+personal Dropbox or Trello: whoever creates them can revoke them, and the deployed service can
+write to them. About 30 minutes.
+
+**Dropbox (both storage packages use the same three values):**
+
+1. Sign in to the test Dropbox account and open the [App Console](https://www.dropbox.com/developers/apps).
+   Create an app with **Scoped access** and **App folder** access (the service then only
+   sees its own folder), and name it, for example, `baskd-hw3-test`.
+2. On the app's **Permissions** tab, enable the scopes Team 3's README lists:
+   `account_info.read`, `files.metadata.read`, `files.metadata.write`, `files.content.read`
+   and `files.content.write`, then **Submit**.
+3. On the **Settings** tab, add the redirect URI `http://localhost:8080/oauth/callback` and
+   copy the **App key** and **App secret**.
+4. Get a long-lived refresh token with Team 3's login command, run from this repository
+   (`uv sync` installs their package):
+
+   ```bash
+   export DROPBOX_APP_KEY=<app key> DROPBOX_APP_SECRET=<app secret>
+   export DROPBOX_REDIRECT_URI=http://localhost:8080/oauth/callback
+   uv run python -m dropbox_client_impl login     # approve in the browser
+   ```
+
+   It saves the token in `.dropbox_token.json` (git-ignored). Copy its `refresh_token` value
+   into `DROPBOX_REFRESH_TOKEN`, then delete the file. `uv run python -m dropbox_client_impl
+   check` confirms the three values work.
+
+**Trello (Team 4's package):**
+
+1. Sign in to the test Trello account, create a board (for example "BASK'D HW3 test") with
+   one list for prep issues, and add one card to it.
+2. In the [Trello developer portal](https://trello.com/power-ups/admin), create an app,
+   open its **API key** page and copy the key (`TRELLO_API_KEY`).
+3. Open this URL with the key filled in and approve read and write access; copy the token
+   (`TRELLO_TOKEN`). `never` keeps it valid through the demos; revoke it at the end of the course
+   under the account's **Applications**:
+   `https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&key=<TRELLO_API_KEY>`
+4. Open the card from step 1, add `.json` to its URL, and copy the top-level `idList`
+   (`TRELLO_LIST_ID`, 24 hexadecimal characters). The list id is not secret; it goes in
+   `trello_list_id` in the Terraform variables.
+
+**Where the values go:** the team password manager, your own `.env` for local runs, and Secret
+Manager for Cloud Run (`scripts/add_workflow_secrets.sh prod`, then `staging`; see
+`infra/README.md`, step 2b). Never in the repository, an issue, a PR or chat. If one leaks:
+regenerate the Dropbox app secret or revoke the Trello token, update the password manager, and
+run the script again; the service picks up the latest version on its next revision.
+
+- [ ] Dropbox test account, app, and the three values in the password manager
+- [ ] Trello test account, board, list, and the three values in the password manager
+- [ ] `uv run --env-file .env pytest -m integration tests/integration/test_meeting_prep_real.py`
+      passes with `BASKD_PROVIDER=google`, `BASKD_WORKFLOW_STORAGE=team3`,
+      `BASKD_WORKFLOW_ISSUES=team4` (then again with `team1`)

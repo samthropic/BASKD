@@ -16,6 +16,8 @@ One configuration serves two environments with separate state and separate resou
 | `google_artifact_registry_repository.images` | Holds release images, pulled by digest | Cloud Run has no image to run |
 | `google_service_account.runtime` | The identity the container runs as; it can read one secret and nothing else | The service would run as the default compute account, which can edit the whole project |
 | `google_secret_manager_secret.calendar_key` | Holds the Calendar service-account key, mounted as a file at runtime | The app fails at startup: `settings.py` requires a key |
+| `google_secret_manager_secret.workflow` | One secret per HW3 credential (`<service>-dropbox-app-key`, `-dropbox-app-secret`, `-dropbox-refresh-token`, `-trello-api-key`, `-trello-token`), created empty whichever implementation is chosen (`terraform output workflow_secrets`) | Switching `workflow_storage` / `workflow_issues` to a real implementation has nowhere to read credentials from |
+| `google_secret_manager_secret_iam_member.runtime_reads_workflow` | Lets the runtime identity read those secrets (`roles/secretmanager.secretAccessor`, per secret) | The revision fails at startup: Cloud Run cannot inject the variables |
 | `google_cloud_run_v2_service.api` | The API, private by default, scaling 0 to `max_instances` | Nothing to call |
 | `google_project_iam_member.runtime_writes_traces` | Lets the runtime identity write spans to Cloud Trace (`roles/cloudtrace.agent`, write-only) | Requests still work, but no traces: a slow or failed request can't be split into our work and the Google call |
 | `google_logging_metric.requests`, `.request_latency` (`observability.tf`) | Turn the app's per-request log line into traffic, error and latency metrics, by operation | The dashboard has no traffic, error or latency panels |
@@ -89,6 +91,26 @@ gcloud secrets versions list "$(terraform output -raw calendar_key_secret)"
 revision fails with `secret …/versions/latest was not found` and leaves a failed service
 behind (the next apply replaces it).
 
+### Step 2b (HW3): the Dropbox and Trello credentials
+
+Only needed before you set `workflow_storage` to `team3` / `team1` or `workflow_issues` to
+`team4`; the defaults (`memory`) read no secrets. Get the values first
+(`docs/HUMAN_STEPS.md` §8), export them in your shell, then add one version per secret.
+The script reads the variables and pipes each one to `gcloud`, so no value lands in your
+shell history or on disk; unset variables are skipped:
+
+```bash
+export DROPBOX_APP_KEY=... DROPBOX_APP_SECRET=... DROPBOX_REFRESH_TOKEN=...
+export TRELLO_API_KEY=... TRELLO_TOKEN=...
+../scripts/add_workflow_secrets.sh prod       # or: staging
+for s in $(terraform output -json workflow_secrets | jq -r '.[]'); do
+  gcloud secrets versions list "$s" --limit=1
+done
+```
+
+**Same rule as step 2:** an implementation whose secrets have no version makes the revision
+fail at startup. `TRELLO_LIST_ID` is not secret; it goes in `.tfvars` as `trello_list_id`.
+
 ## Step 3: push an image and deploy it by digest
 
 Build from a clean checkout of the commit you want to run (normally a release tag):
@@ -132,6 +154,16 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$URL/events/<id>"
 ```
 
+The HW3 workflow (`docs/DESIGN.md`, "HW3"). `/health` says which storage and issue tracker
+are live:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title": "Infra check", "start": "2030-01-07T15:00:00Z", "end": "2030-01-07T15:30:00Z",
+       "agenda": "1. Check the deploy"}' \
+  "$URL/workflows/meeting-prep"
+```
+
 ## Step 5: check that a repeated apply changes nothing
 
 ```bash
@@ -153,6 +185,28 @@ that changes the service's configuration (an environment variable, scaling, the 
 creates a new revision that gets **no traffic**. The change goes live with the next release,
 or move traffic to the new revision by hand:
 `gcloud run services update-traffic baskd --region us-east1 --to-latest`.
+
+### Switching the HW3 implementations
+
+The implementation swap and the failure demo are both configuration changes, made the same
+way. Set the variables in the environment's `.tfvars`:
+
+```hcl
+workflow_storage = "team1"    # team3 | team1 | memory | failing
+workflow_issues  = "team4"    # team4 | memory | failing
+trello_list_id   = "<24 hex characters>"   # required with team4
+```
+
+Then apply, move traffic to the new revision (see the previous paragraph) and confirm:
+
+```bash
+terraform plan -var-file=prod.tfvars -out=tfplan && terraform apply tfplan
+gcloud run services update-traffic baskd --region us-east1 --to-latest
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$URL/health"
+```
+
+`failing` makes every call to that vertical fail with a provider error, so the workflow's
+partial-failure response can be shown on the deployed service. Set it back afterwards.
 
 The workflow's provider and identity are fixed names derived from the environment, and match
 these outputs:
