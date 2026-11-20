@@ -678,17 +678,18 @@ Content-Type: application/json
 
 **The same request when Dropbox times out at step 2:**
 - Team 3 raises `ProviderUnavailableError`.
-- The caller gets `503`, `Retry-After: 5` and this body:
+- The caller gets `503` and this body. There is no `Retry-After` and `retryable` is `false`,
+  because the event already exists: resending the original body would create a second one.
 
 ```json
 {"error": {"code": "provider_unavailable",
-           "message": "Storage is temporarily unavailable",
-           "retryable": true,
+           "message": "Storage is temporarily unavailable. Earlier steps already ran: resend with the event_id from `completed` to resume; …",
+           "retryable": false,
            "failed_step": "save_agenda",
            "completed": [{"step": "create_event", "id": "7k2…q0", "reused": false}]}}
 ```
 
-**The caller retries with `"event_id": "7k2…q0"` added to the same body.** The steps then
+**The caller resumes with `"event_id": "7k2…q0"` added to the same body.** The steps then
 report:
 - `create_event`: a `get`, `reused: true`.
 - `save_agenda`: a `create`. If the first attempt did reach Dropbox, this gets `ConflictError`,
@@ -713,10 +714,17 @@ There is still one event and one file.
     - `create_event` becomes a `get`;
     - `save_agenda` writes to a path derived from the event id, and `create` never
       overwrites, so `ConflictError` means "already saved" (confirmed with
-      `get_metadata`);
+      `get_metadata`; a folder at that path is a known gap, see H6);
     - `create_issue` looks for the `[evt:<id>]` tag first (Decision 3).
-  - The service never retries a write itself. The Dropbox SDK's built-in retries are turned
-    off for both Dropbox implementations.
+  - The service never retries a write itself. For both Dropbox implementations the SDK's
+    429 and 5xx backoff retries are off: `composition.py` sets `max_retries_on_error` and
+    `max_retries_on_rate_limit` to 0 on the SDK client each package builds (the SDK's
+    `clone()` ignores a 0, so they are set directly). The SDK still refreshes an expired
+    access token once and repeats that call; that is not a retry of a failed write.
+  - Once any step has written, a failure is `retryable: false` with no `Retry-After`, and
+    its message says to resume with `event_id`. A failure before any write keeps its usual
+    signal (Team 3's review found the earlier version invited a replay that duplicated the
+    event).
 - **Alternative: compensation (a saga).** On failure, delete what the earlier steps created,
   so the caller can start again from nothing.
 - **Tradeoff.**
@@ -748,7 +756,16 @@ There is still one event and one file.
     implementation's variables are missing from the environment:
     - `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`;
     - `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_LIST_ID`.
-  - `composition.py` maps each name to a constructor.
+  - `composition.py` maps each name to a constructor:
+    - `team3`: `get_dropbox_client()` builds the SDK from `DROPBOX_*`, then
+      `DropboxClient(dbx=...)` and `DropboxDocumentStorage(client=...)`;
+    - `team1`: `create_dropbox_client_from_env()` builds the SDK from the same variables,
+      then `Team1DropboxStorage(client=...)`;
+    - `team4`: Team 4's Trello provider reads `TRELLO_*`.
+  - The packages read their variables from the process environment, so they must be exported
+    (or injected by Cloud Run from Secret Manager) before BASK'D starts. A value only in
+    BASK'D's `.env` file fails the startup check. `DROPBOX_REDIRECT_URI` is only for the
+    one-time OAuth login that produces the refresh token.
 - **Alternative: Team 4's approach.** One `module:attr` string per vertical, imported at
   startup and checked with `isinstance` against the contract.
 - **Tradeoff.**
@@ -843,18 +860,39 @@ Clients that ignore unknown fields are unaffected. The CHANGELOG announces both 
 | Issue tracker | Any other code (`service_not_configured`, `internal_error`, …) | `provider_error` | 502 | false |
 | Any vertical | An exception outside the contract | `provider_error` | 502 | false |
 
+`retryable` and `Retry-After` above apply while nothing has been written. Once `completed` is
+non-empty, every failure is `retryable: false` without `Retry-After` (Decision 1). Messages are
+BASK'D's own, fixed per outcome; the other teams' messages are not passed through, because
+they differ between implementations and can carry paths and SDK exception names.
+
+**What the pinned Dropbox adapters actually raise.** The table maps contract errors to our
+codes, but Team 1 and Team 3 raise different contract errors for the same Dropbox failure.
+Team 3's review measured it through #75 with stubbed SDK 12.1.0 errors:
+
+| Dropbox condition | Team 3 `v0.4.0` → caller sees | Team 1 `784be97` → caller sees |
+| --- | --- | --- |
+| Invalid access token (`AuthError`) | `502 provider_error` | `403 access_denied` |
+| Refresh token rejected (`BadInputError`) | `502 provider_error` | `400 invalid_input` |
+| Rate limited (429) | `503 provider_unavailable` | `502 provider_error` |
+| Server error (500) | `502 provider_error` | `503 provider_unavailable` |
+
+So a swap can change the status a caller sees for the same outage; `failed_step` and
+`completed` do not change. These are mismatches between the two implementations, not in our
+mapping, and are recorded in [#70](https://github.com/samthropic/BASKD/issues/70).
+
 ## H6. What could go wrong
 
 | Failure | Trigger | State left behind | What the caller sees | Recovery | Test |
 | --- | --- | --- | --- | --- | --- |
-| **Event created, agenda not saved** (the handout's case) | Dropbox times out or is down | An event, no file (or a file whose response was lost) | `503 provider_unavailable`, `failed_step: save_agenda`, `completed: [create_event]` | Resend with `event_id`: no new event; a saved file is `ConflictError`, then `get_metadata`, `reused` | Failing storage, then in-memory storage holding the file; assert one event and one file |
+| **Event created, agenda not saved** (the handout's case) | Dropbox times out or is down | An event, no file (or a file whose response was lost) | `503 provider_unavailable`, `retryable: false`, no `Retry-After`, `failed_step: save_agenda`, `completed: [create_event]` | Resend with `event_id`: no new event; a saved file is `ConflictError`, then `get_metadata`, `reused` | Failing storage, then in-memory storage holding the file; assert one event and one file |
 | **Issue create uncertain** | Trello times out after the request was sent | Event, file, maybe an issue | `502 provider_error`, `retryable: false`, `completed` lists two steps | Check the board, or resend with `event_id`: the tag search reuses the issue if it exists | A failing issue provider with `may_have_applied=True`, then a retry that finds the tagged issue |
-| **Tracker unreachable** | DNS failure or refused connection (`may_have_applied=False`) | Event and file | `503 provider_unavailable`, `failed_step: create_issue` | Resend with `event_id` | The `failing` issue implementation (the failure run in #68) |
-| **Credentials revoked or wrong** | A rotated Dropbox or Trello token, or the calendar no longer shared | The earlier steps' records | `403 access_denied` with the step | An operator updates the secret; the caller resumes | Failing implementations raising the denial errors |
+| **Tracker unreachable** | DNS failure or refused connection (`may_have_applied=False`) | Event and file | `503 provider_unavailable`, `retryable: false`, `failed_step: create_issue` | Resend with `event_id` | The `failing` issue implementation (the failure run in #68); API tests for both steps |
+| **Credentials revoked or wrong** | A rotated Dropbox or Trello token, or the calendar no longer shared | The earlier steps' records | Depends on the adapter: Team 1 gives `403 access_denied`, Team 3 `502 provider_error` (H5) | An operator updates the secret; the caller resumes | Failing implementations raising the denial errors |
 | **Configuration missing** | `DROPBOX_*` or `TRELLO_*` not set for the chosen implementation | No new revision serves traffic | Nothing: the service refuses to start, and the deploy's smoke check keeps the previous revision | Fix the Terraform or secret and deploy again | `Settings` tests for each combination |
 | **Unknown `event_id` on resume** | Mistyped id, or the event was deleted | Nothing new | `404 not_found`, `failed_step: create_event`, `completed: []` | Fix the id, or start without one | Resume test with a missing id |
 | **Another team's package breaks its contract** | It raises a non-contract exception or misbehaves | That step's records are unknown | `502 provider_error` naming the step | Report it to the owning team with a reproduction ([#70](https://github.com/samthropic/BASKD/issues/70)); do not work around it silently | A stub raising `RuntimeError` |
-| **Swapped implementations disagree** | Team 1 and Team 3 may raise different errors for the same Dropbox failure (not yet confirmed) | As above | A different `code` after the swap | Report it via #70 | The swap run in #68 |
+| **Swapped implementations disagree** | Team 1 and Team 3 raise different contract errors for the same Dropbox failure (confirmed, H5) | As above | A different status and `code` after the swap; the same step and `completed` | Recorded in #70 for the owning teams | Team 3's stubbed-SDK runs in their review of PR #73 |
+| **Folder at the agenda path** | A folder named `<event id>.md` exists under `/baskd/meeting-prep/` | The event and the folder | `201`, with the folder's id as `document.id`: wrongly reported as saved | **Known gap in Milestone 1.** Fix: confirm a file (a contract-level download) before reporting `reused` | Reproduced by Team 3's review with an injected folder conflict; a test comes with the fix |
 | **Duplicate request without `event_id`** | A caller resends the original body after a failure | Two events | Two successful-looking runs | Documented limitation for Milestone 1: always resume with `event_id`. Milestone 2 adds idempotency keys | Documented, not prevented |
 
 ## H7. How we verify it
@@ -893,11 +931,10 @@ Test records are deleted after grading.
    build and hand out before Milestone 2 brings real sign-in. Terraform refuses `allUsers`,
    because the workflow writes to our test accounts (`docs/DEPLOYMENT.md` §4).
 2. **Team 1's package has no tag.** We pin a commit and switch to a tag when they publish one.
-3. **Contract mismatches.** None confirmed so far. The missing idempotent create is a gap in
-   the shared issue-tracker contract, not a defect in Team 4's package, so we handle it
-   ourselves (H4). Whether Team 1 and Team 3 raise different errors for the same Dropbox
-   failure shows up in the swap run. A confirmed mismatch gets an issue with a reproduction
-   in the owning team's repository (#70).
+3. **Contract mismatches.** Team 3's review confirmed one: Team 1 and Team 3 raise different
+   contract errors for the same Dropbox failures (H5). It is recorded in #70 with the
+   reproduction. The missing idempotent create is a gap in the shared issue-tracker
+   contract, not a defect in Team 4's package, so we handle it ourselves (H4).
 4. **Python 3.14** support waits on PR #61. Team 3 depends on it for their own swap demo.
 5. **Should the agenda file also record the issue id?** That would need a fourth step
    (`DocumentStorage.replace`). Not in Milestone 1.
@@ -906,14 +943,19 @@ Test records are deleted after grading.
 
 ## H9. Review record
 
-Team 3 (Zesan Rahman), whose Dropbox package we depend on, agreed on Nov 20 to review this
-part on [PR #73](https://github.com/samthropic/BASKD/pull/73). Within the team, the reviewer
-who approves that PR reviews it too. Substantive comments and our responses are recorded
-here; until then, the PR thread is the record.
+Team 3 (Zesan Rahman), whose Dropbox package we depend on, reviewed H1–H9 on Nov 20 on
+[PR #73](https://github.com/samthropic/BASKD/pull/73). Zesan ran `make check` on this branch and
+on #75, called the endpoint with controlled failures, and drove both Dropbox adapters with
+stubbed SDK errors. Within the team, the teammate who approves PR #73 reviews it too.
 
 | Reviewer | Question | Response | Change |
 | --- | --- | --- | --- |
-| | | | |
+| Zesan (Team 3), question | Show how both Dropbox adapters are built, and say the variables must be in the process environment | Agreed | H4 Decision 2 names both construction paths and says `DROPBOX_*` must be exported or injected before start |
+| Zesan, suggestion | "Retries are off" only covers 429/5xx backoff; a token refresh still repeats a call. Prefer the SDK's public constructor and test the attempt count | Agreed on the wording; the constructor change is a follow-up ([#77](https://github.com/samthropic/BASKD/issues/77)) | H4 Decision 1 narrowed |
+| Zesan, blocking | `get_metadata` succeeds for a folder, so a folder at the agenda path counts as saved | Valid. It needs a folder with the event id's name, so for Milestone 1 we document it and fix it next ([#77](https://github.com/samthropic/BASKD/issues/77)) | H6 row "Folder at the agenda path" |
+| Zesan, blocking | After a storage failure, the identical POST got `retryable: true` and `Retry-After` and made a second event | Valid; fixed | #75: a failure with non-empty `completed` is `retryable: false`, without `Retry-After`, and says to resume with `event_id`; tests for failures at `save_agenda` and `create_issue`. H3, H4, H5, H6 updated |
+| Zesan, blocking | Bad Dropbox credentials are not a blanket 403: Team 1 and Team 3 map the same SDK errors differently | Valid; it is a mismatch between the two implementations, not in our mapping | H5 adapter table, H6 rows, H8 question 3; cases recorded in #70 |
+| Zesan, suggestion | Use stable messages; Team 3's timeout leaked the operation, path and `ReadTimeout` | Agreed; fixed | #75: storage and tracker errors carry fixed BASK'D messages; a test asserts no adapter text or path |
 
 ## Revision history
 
@@ -927,3 +969,6 @@ here; until then, the PR thread is the record.
 - 2026-11-20: staff access decided (H8 question 1); verification reduced to three runs on the
   deployed service (H7); no contract mismatch confirmed yet (H8 question 3) (Arda). Issues
   #67, #68, #70.
+- 2026-11-20: Team 3's review applied (H9): resume-aware retry signal and fixed messages
+  (code in #75), Dropbox adapter table (H5), folder gap (H6), construction paths and retry
+  wording (H4) (Arda).
