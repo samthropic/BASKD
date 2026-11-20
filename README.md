@@ -162,6 +162,24 @@ curl -X POST localhost:8000/workflows/meeting-prep -H 'Content-Type: application
        "end": "2026-11-24T15:30:00Z", "agenda": "1. Walk through DESIGN.md"}'
 ```
 
+**On the deployed service.** It runs at `https://baskd-2h3zmmmvma-ue.a.run.app` and is private
+to NYU: any NYU Google account can call it with an identity token (`docs/DEPLOYMENT.md` §4).
+
+```bash
+gcloud auth login                                  # sign in with your NYU account
+URL=https://baskd-2h3zmmmvma-ue.a.run.app
+TOKEN=$(gcloud auth print-identity-token)
+curl -s -H "Authorization: Bearer $TOKEN" "$URL/health"   # shows the live storage and tracker
+curl -s -X POST "$URL/workflows/meeting-prep" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Try it", "start": "2026-12-10T15:00:00Z", "end": "2026-12-10T15:30:00Z",
+       "agenda": "1. Check the three providers"}'
+```
+
+It writes to the team's test calendar, Dropbox and Trello. The verification runs, with the
+records each one left in the providers, are in
+[#68](https://github.com/samthropic/BASKD/issues/68).
+
 Nothing is rolled back and the service never retries on its own. A failure returns the usual
 error envelope plus the step that failed and what already exists:
 
