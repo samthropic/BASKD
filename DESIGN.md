@@ -15,6 +15,9 @@ This document says how our HW1 service, BASK'D, will satisfy the contract the th
 teams agreed on, and how we will know it does. It does not repeat the contract: when a rule is
 cited as "rule N", the wording is in the shared HTTP contract.
 
+HW3 adds one composed workflow across Calendar, Storage and Issue Tracker. It is
+described in [HW3 Milestone 1](#hw3-milestone-1-composing-the-three-verticals), after §12.
+
 ## 1. Context, goals and non-goals
 
 **What a consumer wants.** A client (a script, another team's app, the course staff's checker)
@@ -527,6 +530,374 @@ why:
   Google call, a dashboard, and two SLOs for `GET /events/{id}` with a burn-rate alert tested
   on staging (`docs/OBSERVABILITY.md`, `docs/SLO.md`).
 
+# HW3 Milestone 1: composing the three verticals
+
+| | |
+| --- | --- |
+| **Authors** | Arda Dinc (draft), for Team 7 |
+| **Reviewers** | One Team 7 teammate, and Team 3 as the outside team ([#69](https://github.com/samthropic/BASKD/issues/69)). See [H9](#h9-review-record) |
+| **Status** | **Proposed**, for review before the code lands. Code: [#64](https://github.com/samthropic/BASKD/issues/64) (packages and configuration), [#65](https://github.com/samthropic/BASKD/issues/65) (controlled implementations), [#66](https://github.com/samthropic/BASKD/issues/66) (the endpoint) |
+| **Last updated** | 2026-11-20 |
+| **Shared contracts** | `calendar-contract` `v0.1.0-rc.1` (ours, with Teams 2 and 5); `cloud-storage-api` tag `0.3.1` (Teams 1, 3 and 6); `issue-tracker-contract` rev `issue-tracker-contract-v1.1.0` (Team 4) |
+
+The HW2 parts above describe our calendar behind the shared Calendar contract. This part adds
+one operation that uses all three verticals. Milestone 1 asks for:
+- fixed steps and no language model;
+- our implementation for Calendar and another team's for Storage and for Issue Tracker;
+- implementations chosen by configuration;
+- failures reported in our HW1 error model, naming the failed step;
+- a deployment through the HW2 pipeline, with one test account.
+
+**Not in Milestone 1:** a language model, an interface, more than one user, more than one
+scenario, or a database. Milestone 2 extends this part.
+
+## H1. The workflow: meeting prep
+
+`POST /workflows/meeting-prep` prepares a meeting. It runs three steps in a fixed order, and
+each step uses the result of the step before it.
+
+| # | Step name | Vertical and implementation | Contract call |
+| --- | --- | --- | --- |
+| 1 | `create_event` | Calendar: **ours**, `ContractCalendarService` on Google Calendar | `CalendarService.create(CreateEvent)`, or `get(event_id)` when resuming |
+| 2 | `save_agenda` | Storage: **Team 3**, Dropbox (swap: **Team 1**, Dropbox) | `DocumentStorage.create("/baskd/meeting-prep/<event id>.md", markdown)` |
+| 3 | `create_issue` | Issue tracker: **Team 4**, Trello | `IssueProvider.list_issues(limit=100)`, then `create_issue("Prep: <title> [evt:<event id>]")` |
+
+**Why this workflow** (handout question 1):
+- **It is the handout's own partial-failure case:** an event is created, then saving its
+  summary fails.
+- **It writes once to each vertical,** so each provider shows one record to check.
+- **It fits the Milestone 2 product ideas:** a standup, onboarding or review-prep agent.
+
+**Which implementation, and what if it is down** (question 2):
+
+| Vertical | Default | Alternative | If it is unavailable |
+| --- | --- | --- | --- |
+| Calendar | Ours (`BASKD_PROVIDER=google`) | – | The step fails with our documented error |
+| Storage | Team 3, `dropbox-client-impl`, tag `v0.4.0` | Team 1, `team1-dropbox-storage`, commit `784be97` (no tag yet). It uses the same three Dropbox variables | Switch to Team 1 with one configuration change. Either way the caller gets a documented error naming `save_agenda` |
+| Issue tracker | Team 4, `team-4-issue-tracker-trello`, rev `team-4-issue-tracker-trello-v1.0.0` | None: Team 4 is the only team in this vertical | The step fails with a documented error naming `create_issue` |
+
+`memory` and `failing` (in-memory and always-failing implementations) exist for tests and the
+failure demo.
+
+**Judgment needed later** (question 4). These steps will need it:
+- what the agenda says;
+- when to meet;
+- how the issue is worded or split.
+
+These stay fixed: the order of the steps, the naming, and the tags that link the three
+records.
+
+**What the contracts do not provide** (question 5):
+- **No idempotent issue create.** `create_issue(title)` cannot be retried safely after a
+  timeout. See Decision 3.
+- **No links between records.** A shared `Issue` has only `id` and `title`, so the event id
+  goes into the issue title. The shared calendar `Event` has no description, so the event
+  does not link to the agenda. The agenda file's name carries the event id.
+- **No way to attach a file to an event or an issue.** This is not needed in Milestone 1.
+
+## H2. How it fits together
+
+```mermaid
+flowchart LR
+    Caller["Caller<br/>(curl, staff, later the agent)"] -->|"POST /workflows/meeting-prep<br/>JSON"| Route["api/workflows.py<br/>validate body, run, error envelope"]
+    Route --> Flow["workflow/meeting_prep.py<br/>3 fixed steps, error translation"]
+    Flow -->|"CalendarService"| CalC["calendar-contract<br/>v0.1.0-rc.1"]
+    Flow -->|"DocumentStorage"| StoC["cloud-storage-api<br/>0.3.1"]
+    Flow -->|"IssueProvider"| IssC["issue-tracker-contract<br/>v1.1.0"]
+    CalC -.-> Ours["baskd.contract.ContractCalendarService<br/>over providers/google.py"]
+    StoC -.-> T3["Team 3 dropbox-client-impl<br/>(swap: Team 1 team1-dropbox-storage)"]
+    IssC -.-> T4["Team 4 TrelloIssueProvider"]
+    Ours -->|HTTPS| G[("Google Calendar<br/>test calendar")]
+    T3 -->|HTTPS| D[("Dropbox<br/>test account")]
+    T4 -->|HTTPS| T[("Trello<br/>test board")]
+    Comp["workflow/composition.py<br/>builds the 3 implementations<br/>from Settings at startup"] -.-> Flow
+    Env["Cloud Run environment<br/>from Secret Manager + Terraform:<br/>Google key file, DROPBOX_*, TRELLO_*,<br/>BASKD_WORKFLOW_*"] --> Comp
+    classDef ext fill:#fff7ed,stroke:#f97316;
+    class T3,T4 ext;
+```
+
+| Module | Responsibility | May import |
+| --- | --- | --- |
+| `api/workflows.py` | The route: validates the body once, runs the workflow, builds the success body or the error envelope, writes the failure log fields | The workflow module, `baskd.errors` |
+| `workflow/meeting_prep.py` | The three steps, reconciling before writes, translating each vertical's errors into `baskd.errors` | Only the three contract packages and `baskd.errors` |
+| `workflow/composition.py` | Builds the calendar, storage and issue implementations named in `Settings` | **The only module that imports another team's package.** Imports are lazy, so an unchosen package is never loaded |
+| `workflow/controlled.py` | In-memory and always-failing `DocumentStorage` and `IssueProvider` | The contract packages |
+| `settings.py` | `BASKD_WORKFLOW_STORAGE`, `BASKD_WORKFLOW_ISSUES`, fail-fast credential checks | – |
+| `app.py` | Builds the workflow once at startup and keeps it on `app.state` | `composition` (like `providers.build_provider`) |
+
+This keeps the HW2 dependency rule: `api/` sees only the workflow and the contracts, never a
+team's package or an SDK. `/health` also reports which storage and issue implementations are
+active, so a swap can be confirmed without reading the configuration.
+
+## H3. A traced request
+
+```http
+POST /workflows/meeting-prep
+Content-Type: application/json
+
+{"title": "Design review: HW3",
+ "start": "2026-11-24T15:00:00-05:00", "end": "2026-11-24T15:30:00-05:00",
+ "agenda": "1. Walk through DESIGN.md\n2. Open questions"}
+```
+
+1. **Validation**, before any step runs:
+   - `title` is 1–200 characters;
+   - `start` and `end` carry a UTC offset, and `end` is after `start`;
+   - `agenda` is optional, at most 10 000 characters;
+   - `event_id` is optional.
+
+   A failure here is `422 invalid_input` and nothing has been called.
+2. **`create_event`.**
+   - Call: `CreateEvent(title="Design review: HW3", start="2026-11-24T20:00:00Z", end="2026-11-24T20:30:00Z")`.
+   - Result: shared `Event(id="7k2…q0", title=…, start="2026-11-24T20:00:00Z", end=…)`.
+   - The event is now on the test calendar.
+3. **`save_agenda`.**
+   - Call: `create("/baskd/meeting-prep/7k2…q0.md", b"# Design review: HW3 …")`.
+   - The file is a short Markdown page with the title, the UTC times, the event id and the
+     agenda text.
+   - Result: `FileInfo(id="id:…", path="/baskd/meeting-prep/7k2…q0.md", …)`.
+4. **`create_issue`.**
+   - First, `list_issues(limit=100)` finds no title containing `[evt:7k2…q0]`.
+   - Call: `create_issue("Prep: Design review: HW3 [evt:7k2…q0]")`.
+   - Result: `Issue(id="65f…", title=…)`.
+   - The title is shortened if it would pass the contract's 256 characters, but the tag is
+     always kept.
+5. **Response `201`:**
+
+```json
+{
+  "event": {"id": "7k2…q0", "title": "Design review: HW3",
+            "start": "2026-11-24T20:00:00Z", "end": "2026-11-24T20:30:00Z"},
+  "document": {"path": "/baskd/meeting-prep/7k2…q0.md", "id": "id:…"},
+  "issue": {"id": "65f…", "title": "Prep: Design review: HW3 [evt:7k2…q0]"},
+  "steps": [{"step": "create_event", "id": "7k2…q0", "reused": false},
+            {"step": "save_agenda", "id": "/baskd/meeting-prep/7k2…q0.md", "reused": false},
+            {"step": "create_issue", "id": "65f…", "reused": false}]
+}
+```
+
+**The same request when Dropbox times out at step 2:**
+- Team 3 raises `ProviderUnavailableError`.
+- The caller gets `503`, `Retry-After: 5` and this body:
+
+```json
+{"error": {"code": "provider_unavailable",
+           "message": "Storage is temporarily unavailable",
+           "retryable": true,
+           "failed_step": "save_agenda",
+           "completed": [{"step": "create_event", "id": "7k2…q0", "reused": false}]}}
+```
+
+**The caller retries with `"event_id": "7k2…q0"` added to the same body.** The steps then
+report:
+- `create_event`: a `get`, `reused: true`.
+- `save_agenda`: a `create`. If the first attempt did reach Dropbox, this gets `ConflictError`,
+  then `get_metadata`, and reports `reused: true`.
+- `create_issue`: a `create`.
+
+There is still one event and one file.
+
+## H4. Decisions
+
+### Decision 1: the caller resumes; the service neither rolls back nor retries
+
+- **Constraint.**
+  - Three providers, no transaction across them.
+  - A write that timed out may still have happened: Trello reports this as `provider_error`
+    with `may_have_applied=True`, our calendar as `provider_error`.
+  - The issue-tracker contract has no idempotent create.
+- **Approach.**
+  - A failure lists the completed steps and their ids.
+  - The caller resends the same body plus `event_id`.
+  - Every step checks the provider before writing:
+    - `create_event` becomes a `get`;
+    - `save_agenda` writes to a path derived from the event id, and `create` never
+      overwrites, so `ConflictError` means "already saved" (confirmed with
+      `get_metadata`);
+    - `create_issue` looks for the `[evt:<id>]` tag first (Decision 3).
+  - The service never retries a write itself. The Dropbox SDK's built-in retries are turned
+    off for both Dropbox implementations.
+- **Alternative: compensation (a saga).** On failure, delete what the earlier steps created,
+  so the caller can start again from nothing.
+- **Tradeoff.**
+  - **Costs:**
+    - The caller must keep `event_id` to resume.
+    - An abandoned run leaves an event and maybe a file behind.
+    - On a retry, the first saved agenda wins, so a changed agenda in the retry is not saved.
+  - **Why compensation is worse here:**
+    - A delete can fail too, leaving two failures to explain.
+    - Deleting throws away work the caller could resume from.
+    - An issue whose create is uncertain cannot be deleted without knowing its id.
+  - Hidden retries look friendlier but can duplicate exactly the writes whose outcome is
+    unknown.
+- **Revisit** when Milestone 2 adds a job store and approvals. The service could then keep
+  per-step state and idempotency keys itself, and the caller would not need `event_id`.
+  Also revisit if the contracts gain idempotent creates.
+
+### Decision 2: implementations are chosen from a fixed list of names
+
+- **Constraint.**
+  - Switching teams must need no code change.
+  - `api/` must not depend on a concrete package.
+  - A bad configuration should fail at startup, not on the first request.
+- **Approach.**
+  - Configuration values:
+    - `BASKD_WORKFLOW_STORAGE`: `team3`, `team1`, `memory` or `failing`.
+    - `BASKD_WORKFLOW_ISSUES`: `team4`, `memory` or `failing`.
+  - `Settings` rejects any other value. It also refuses to start when the chosen
+    implementation's variables are missing from the environment:
+    - `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`;
+    - `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_LIST_ID`.
+  - `composition.py` maps each name to a constructor.
+- **Alternative: Team 4's approach.** One `module:attr` string per vertical, imported at
+  startup and checked with `isinstance` against the contract.
+- **Tradeoff.**
+  - **Cost:** supporting a new team's package needs a few lines in `composition.py`. That
+    change is small, because the package also needs a dependency and a lockfile change.
+  - **Gains:**
+    - Configuration cannot import arbitrary code.
+    - Every supported implementation has a test.
+    - A typo fails at startup with the list of valid names.
+- **Revisit** if a vertical gets more than three or four implementations, or if
+  implementations must be added without a release.
+
+### Decision 3: the issue is deduplicated by an `[evt:<id>]` tag in its title
+
+- **Constraint.**
+  - The shared `Issue` has only `id` and `title`.
+  - `create_issue(title)` is not idempotent.
+  - Trello timeouts are "may have applied".
+- **Approach.**
+  - The issue title ends with `[evt:<event id>]`.
+  - Before creating, `list_issues(limit=100)` (newest first) is searched for the tag, and a
+    match is reused.
+- **Alternative: Team 4's `create_tagged_issue(title, creation_token)` and
+  `find_tagged_issue`.** They keep a token in the card's description, which makes the create
+  exactly idempotent on Trello.
+- **Tradeoff.**
+  - **Ours works with any `IssueProvider`,** so the tracker stays swappable through the
+    contract. But it is best effort:
+    - only the newest 100 issues are searched;
+    - renaming the issue breaks the link;
+    - the tag shows in the title.
+  - **Team 4's methods are outside the contract.** Using them would tie the workflow to
+    Trello.
+  - **An uncertain create is still reported** as `provider_error`, `retryable: false`. The
+    caller should check the tracker or resume with `event_id`, and the tag search then finds
+    the issue if it was created.
+- **Revisit** when the issue-tracker contract gains an idempotent create (we raise this with
+  Team 4 through [#70](https://github.com/samthropic/BASKD/issues/70)), or when the list
+  regularly holds more than 100 open issues.
+
+## H5. Boundaries and the error model
+
+**Where inputs are validated.**
+- **The request body:** validated once, at the HTTP boundary, before any step runs.
+- **The calendar step:** `ContractCalendarService` applies our HW2 event rules again, as it
+  does for the shared conformance suite.
+- **Other teams' responses:** trusted only as far as their contract types go.
+
+**Where credentials live.** No credential is in the repository, the image or `.env.example`.
+
+| Credential | Where it lives in Cloud Run | How it gets there |
+| --- | --- | --- |
+| Google service-account key | A file mounted from Secret Manager (`BASKD_GOOGLE_CREDENTIALS_FILE`) | Terraform (HW2) |
+| Dropbox app key, secret and refresh token for the test account | `DROPBOX_*` environment variables | Secret Manager, wired by Terraform ([#67](https://github.com/samthropic/BASKD/issues/67)) |
+| Trello API key, token and list id for the test board | `TRELLO_*` environment variables | Secret Manager, wired by Terraform (#67) |
+
+For local development, the same variables come from the developer's own environment.
+
+**Rules that hold even when a dependency fails:**
+1. A `201` means all three steps finished. Nothing else returns `2xx`.
+2. Every failure names `failed_step` and lists exactly the steps that finished, with their ids.
+3. The service never retries a write and never deletes an earlier step's record.
+4. A resume with `event_id` never creates a second event or a second agenda file.
+5. No exception from another team's package escapes:
+   - contract errors are translated (table below);
+   - anything else is `provider_error` for that step, and only the exception's type is
+     logged.
+6. Logs carry the step and the error code only. They never contain titles, agenda text,
+   paths or ids.
+
+**The error envelope** is HW1's, plus two fields:
+- `failed_step`: `create_event`, `save_agenda` or `create_issue`;
+- `completed`: a list of `{step, id, reused}`.
+
+Clients that ignore unknown fields are unaffected. The CHANGELOG announces both fields.
+
+| Source | Error | Our `code` | Status | `retryable` |
+| --- | --- | --- | --- | --- |
+| Calendar | Shared `invalid_input`, `not_found`, `access_denied`, `provider_error`, `provider_unavailable` | Same code | 400, 404, 403, 502, 503 | As the shared error says |
+| Calendar | `not_found` while resuming with an unknown `event_id` | `not_found` | 404 | false |
+| Storage | `InvalidRequestError`, `FileTooLargeError` | `invalid_input` | 400 | false |
+| Storage | `PermissionDeniedError` | `access_denied` | 403 | false |
+| Storage | `ProviderUnavailableError` | `provider_unavailable` | 503 + `Retry-After` | true: the save is idempotent by path |
+| Storage | `NotFoundError`, `InvalidOperationError`, `ProviderError`, any other `StorageError` | `provider_error` | 502 | false |
+| Issue tracker | `ServiceError` `access_denied` | `access_denied` | 403 | false |
+| Issue tracker | `ServiceError` `invalid_input` | `invalid_input` | 400 | false |
+| Issue tracker | `provider_error` with `may_have_applied=False` (nothing was sent) | `provider_unavailable` | 503 + `Retry-After` | true |
+| Issue tracker | `provider_error` with `may_have_applied=True` | `provider_error` | 502 | false |
+| Issue tracker | Any other code (`service_not_configured`, `internal_error`, …) | `provider_error` | 502 | false |
+| Any vertical | An exception outside the contract | `provider_error` | 502 | false |
+
+## H6. What could go wrong
+
+| Failure | Trigger | State left behind | What the caller sees | Recovery | Test |
+| --- | --- | --- | --- | --- | --- |
+| **Event created, agenda not saved** (the handout's case) | Dropbox times out or is down | An event, no file (or a file whose response was lost) | `503 provider_unavailable`, `failed_step: save_agenda`, `completed: [create_event]` | Resend with `event_id`: no new event; a saved file is `ConflictError`, then `get_metadata`, `reused` | Failing storage, then in-memory storage holding the file; assert one event and one file |
+| **Issue create uncertain** | Trello times out after the request was sent | Event, file, maybe an issue | `502 provider_error`, `retryable: false`, `completed` lists two steps | Check the board, or resend with `event_id`: the tag search reuses the issue if it exists | A failing issue provider with `may_have_applied=True`, then a retry that finds the tagged issue |
+| **Tracker unreachable** | DNS failure or refused connection (`may_have_applied=False`) | Event and file | `503 provider_unavailable`, `failed_step: create_issue` | Resend with `event_id` | The `failing` issue implementation (the staging demo) |
+| **Credentials revoked or wrong** | A rotated Dropbox or Trello token, or the calendar no longer shared | The earlier steps' records | `403 access_denied` with the step | An operator updates the secret; the caller resumes | Failing implementations raising the denial errors |
+| **Configuration missing** | `DROPBOX_*` or `TRELLO_*` not set for the chosen implementation | No new revision serves traffic | Nothing: the service refuses to start, and the deploy's smoke check keeps the previous revision | Fix the Terraform or secret and deploy again | `Settings` tests for each combination |
+| **Unknown `event_id` on resume** | Mistyped id, or the event was deleted | Nothing new | `404 not_found`, `failed_step: create_event`, `completed: []` | Fix the id, or start without one | Resume test with a missing id |
+| **Another team's package breaks its contract** | It raises a non-contract exception or misbehaves | That step's records are unknown | `502 provider_error` naming the step | Report it to the owning team with a reproduction ([#70](https://github.com/samthropic/BASKD/issues/70)); do not work around it silently | A stub raising `RuntimeError` |
+| **Swapped implementations disagree** | Team 1 and Team 3 may raise different errors for the same Dropbox failure (not yet confirmed) | As above | A different `code` after the swap | Report it via #70 | The swap run in #68 |
+| **Duplicate request without `event_id`** | A caller resends the original body after a failure | Two events | Two successful-looking runs | Documented limitation for Milestone 1: always resume with `event_id`. Milestone 2 adds idempotency keys | Documented, not prevented |
+
+## H7. How we verify it
+
+Evidence goes in `docs/HW3_M1_EVIDENCE.md`
+([#68](https://github.com/samthropic/BASKD/issues/68)). Each check says whether it used
+controlled implementations or real providers.
+
+**Controlled checks** (no real provider involved):
+
+| Check | How | Success means |
+| --- | --- | --- |
+| Happy path, each step's failure, resume, reuse of the agenda and the issue, uncertain create | Unit tests with `memory` and `failing` implementations, through the `client` fixture | The documented status, `code`, `failed_step` and `completed`; exactly one record per step after a resume |
+| Configuration | `Settings` and `composition` tests for every name and missing variable | The right contract type is built, or startup fails with a clear message |
+| Failure demo on the deployed service | `BASKD_WORKFLOW_ISSUES=failing` on staging | The caller sees `503 provider_unavailable` with `failed_step: create_issue` and both earlier steps in `completed` |
+
+**Real-provider checks** (the deployed service with the test accounts):
+
+| Check | How | Success means |
+| --- | --- | --- |
+| The composed workflow | `POST /workflows/meeting-prep` on the deployed service with `team3` and `team4` | The event on the test calendar, the file in the test Dropbox and the card on the test Trello list, with matching ids |
+| Swapping one vertical | Change only `BASKD_WORKFLOW_STORAGE` to `team1` through Terraform, roll out, run again | `/health` shows `team1`; a new file appears; the commit is the same as in the first run |
+| Partial failure and resume | Make `save_agenda` fail, then resume with `event_id` | Exactly one event on the calendar after the resume |
+
+Test records are deleted after grading.
+
+## H8. Open questions
+
+1. **How do course staff call a private Cloud Run service?** Either we add their accounts as
+   invokers (they call with an identity token), or we add a simple API key now. Decided in
+   #67.
+2. **Team 1's package has no tag.** We pin a commit and switch to a tag when they publish one.
+3. **Contract mismatches we find,** such as the missing idempotent create or different errors
+   for the same Dropbox failure, are reported to the owning teams through #70.
+4. **Python 3.14** support waits on PR #61. Team 3 depends on it for their own swap demo.
+5. **Should the agenda file also record the issue id?** That would need a fourth step
+   (`DocumentStorage.replace`). Not in Milestone 1.
+6. **Should a retry with a changed agenda replace the saved file?** Today the first saved
+   agenda wins.
+
+## H9. Review record
+
+| Reviewer | Question | Response | Change |
+| --- | --- | --- | --- |
+| | | | |
+
 ## Revision history
 
 - 2026-11-04: first version, for the Milestone 2 review (Arda). Issue #39.
@@ -534,3 +905,5 @@ why:
   record filled in (Arda).
 - 2026-11-11: implemented in `v0.2.0`. Answered §9 questions 1, 4 and 5; recorded the
   actions' outcomes (§11) and what changed during implementation (§12) (Karthik).
+- 2026-11-20: HW3 Milestone 1 part added, for review before the code lands (Arda).
+  Issue #63.
