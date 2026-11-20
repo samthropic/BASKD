@@ -63,10 +63,13 @@ def request(
 
 
 def ask(prompt: str) -> str:
-    value = getpass.getpass(f"{prompt} (hidden): ").strip()
-    if not value:
-        raise SetupError(f"{prompt}: nothing entered")
-    return value
+    for _ in range(3):
+        value = getpass.getpass(f"{prompt} (hidden, paste then Enter): ").strip()
+        if value:
+            print(f"  got it ({len(value)} characters)")
+            return value
+        print("  nothing was entered; paste it again")
+    raise SetupError(f"{prompt}: nothing entered")
 
 
 def open_link(what: str, url: str) -> None:
