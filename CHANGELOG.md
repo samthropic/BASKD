@@ -6,6 +6,20 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+### Added
+- HW3: the service can use another team's Document Storage and issue tracker, chosen by
+  `BASKD_WORKFLOW_STORAGE` (`team3`, `team1`, `memory`, `failing`) and
+  `BASKD_WORKFLOW_ISSUES` (`team4`, `memory`, `failing`). Startup fails when the chosen
+  implementation's `DROPBOX_*` or `TRELLO_*` variables are missing. `/health` reports both
+  choices. (#64, #65)
+
+### Dependencies
+- Added the storage contract `cloud-storage-api` (tag `0.3.1`), Team 3's
+  `dropbox-client-impl` and `cloud-storage-client-api` (tag `v0.4.0`), Team 1's
+  `team1-dropbox-storage` (commit `784be97`; no tag yet), and Team 4's
+  `issue-tracker-contract` and `team-4-issue-tracker-trello`. These bring in the Dropbox SDK
+  (`dropbox==12.1.0`). (#64)
+
 ### Setup and configuration
 
 - HW3 deployment (#67): Terraform variables `workflow_storage`, `workflow_issues` and

@@ -79,7 +79,7 @@ calendar, chosen by configuration; clients never name a calendar.
 
 | Method & path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
-| `GET /health` | Liveness; reports which provider is active. Does not call the provider. | `200 {"status":"ok","provider":"google","version":"…"}` | |
+| `GET /health` | Liveness; reports which provider is active, and which storage and issue tracker the HW3 workflow uses. Does not call any provider. | `200 {"status":"ok","provider":"google","version":"…","workflow_storage":"team3","workflow_issues":"team4"}` | |
 | `GET /ready` | Readiness: can requests succeed right now? Makes one cheap provider call (one event, one field). | `200 {"status":"ready","provider":"google","version":"…"}` | `503 {"status":"not_ready",…,"reason":"<error code>"}` |
 | `POST /events` | Create an event | `201` + `Location` header + event | `422` invalid body, `400`, `403`, `502`, `503` |
 | `GET /events/{id}` | Fetch one event | `200` event | `404`, `422` invalid id, `403`, `502`, `503` |
@@ -236,9 +236,15 @@ working directory. `.env.example` documents each one.
 | `BASKD_LOG_FORMAT` | `text` | `json` writes Cloud Logging's structured format (set on Cloud Run) |
 | `BASKD_GCP_PROJECT` | | Project that receives traces. Unset: spans are made (log lines keep a trace id) but not exported |
 | `BASKD_COMMIT` | `unknown` | Commit the image was built from; the Dockerfile sets it. Logs report `release` as version + short commit |
+| `BASKD_WORKFLOW_STORAGE` | `memory` | HW3 workflow storage: `team3` (Team 3's Dropbox package), `team1` (Team 1's Dropbox package), `memory`, or `failing` (every call fails, for the failure demo) |
+| `BASKD_WORKFLOW_ISSUES` | `memory` | HW3 workflow issue tracker: `team4` (Team 4's Trello package), `memory`, or `failing` |
+| `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` | | Required with `team3` or `team1`; both packages read the same three. Not prefixed, and **not read from `.env`**: export them, or run with `uv run --env-file .env` |
+| `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_LIST_ID` | | Required with `team4`. Same rules as the Dropbox variables |
 
 The service fails at startup with a readable message when `google` is selected but the
-calendar id or credentials are missing.
+calendar id or credentials are missing, and when another team's implementation is selected
+but its variables are not set. Switching storage from Team 3 to Team 1 is a change to
+`BASKD_WORKFLOW_STORAGE` and nothing else.
 
 > **Security note.** The API itself has **no authentication**: anyone who can reach the port
 > can edit the calendar the service is bound to. Milestone 1 runs it on `127.0.0.1` only.

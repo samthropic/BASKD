@@ -27,7 +27,13 @@ def create(client: TestClient, **overrides: Any) -> dict[str, Any]:
 def test_health_reports_provider_and_version(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "provider": "memory", "version": __version__}
+    assert response.json() == {
+        "status": "ok",
+        "provider": "memory",
+        "version": __version__,
+        "workflow_storage": "memory",
+        "workflow_issues": "memory",
+    }
 
 
 def test_ready_when_the_provider_can_serve(client: TestClient) -> None:
