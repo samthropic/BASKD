@@ -12,6 +12,11 @@ Release notes on GitHub are built from the matching section here.
   `BASKD_WORKFLOW_ISSUES` (`team4`, `memory`, `failing`). Startup fails when the chosen
   implementation's `DROPBOX_*` or `TRELLO_*` variables are missing. `/health` reports both
   choices. (#64, #65)
+- `POST /workflows/meeting-prep` (HW3 Milestone 1): creates a calendar event, saves its
+  agenda in the configured storage and opens a prep issue in the configured tracker. A
+  failed step returns the error envelope plus `failed_step` and `completed`; resending with
+  `event_id` resumes without duplicating anything. Failure log lines carry `failed_step`.
+  (#66)
 
 ### Dependencies
 - Added the storage contract `cloud-storage-api` (tag `0.3.1`), Team 3's
