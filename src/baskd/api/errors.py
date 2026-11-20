@@ -148,19 +148,30 @@ def register_error_handlers(app: FastAPI) -> None:
     async def handle_workflow_step(request: Request, exc: WorkflowStepFailed) -> JSONResponse:
         error = exc.error
         status_code = status_for(error)
+        # Once a step has written something, resending the same body would create a second
+        # event: the request is no longer safe to retry as-is, even when the failure itself
+        # is transient. The caller resumes with the event id from `completed` instead.
+        resume = bool(exc.completed)
+        retryable = error.retryable and not resume
+        message = error.message
+        if resume:
+            message += (
+                ". Earlier steps already ran: resend with the event_id from `completed` to "
+                "resume; resending the request unchanged would create a second event."
+            )
         log_failure(
             request,
             status=status_code,
             error=error.code,
             category=error.category,
-            retryable=error.retryable,
+            retryable=retryable,
             failed_step=exc.step,
         )
         body = WorkflowErrorResponse(
             error=WorkflowErrorBody(
                 code=error.code,
-                message=error.message,
-                retryable=error.retryable,
+                message=message,
+                retryable=retryable,
                 failed_step=exc.step,
                 completed=[
                     CompletedStep(step=done.step, id=done.id, reused=done.reused)
@@ -170,7 +181,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
         headers = (
             {"Retry-After": RETRY_AFTER_SECONDS}
-            if status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+            if status_code == status.HTTP_503_SERVICE_UNAVAILABLE and retryable
             else None
         )
         return JSONResponse(

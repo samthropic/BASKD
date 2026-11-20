@@ -247,7 +247,7 @@ class TestErrorTranslation:
     def test_storage(self, world: World, error: StorageError, expected: type[Exception]) -> None:
         failed = failure(world.workflow(storage=Raising(error)), request())
         assert isinstance(failed.error, expected)
-        assert failed.error.message.startswith("Storage: ")
+        assert failed.error.message.startswith("Storage ")
 
     @pytest.mark.parametrize(
         ("code", "expected"),
@@ -261,7 +261,7 @@ class TestErrorTranslation:
     def test_issue_tracker(self, world: World, code: ErrorCode, expected: type[Exception]) -> None:
         failed = failure(world.workflow(issues=FailingIssueProvider(code)), request())
         assert isinstance(failed.error, expected)
-        assert failed.error.message.startswith("Issue tracker: ")
+        assert failed.error.message.startswith("Issue tracker ")
 
 
 class TestHelpers:

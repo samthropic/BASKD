@@ -13,7 +13,12 @@ from issue_tracker_contract import ErrorCode, IssueProvider
 
 from baskd.app import create_app
 from baskd.settings import Settings
-from baskd.workflow.controlled import FailingDocumentStorage, FailingIssueProvider
+from baskd.workflow.controlled import (
+    FailingDocumentStorage,
+    FailingIssueProvider,
+    InMemoryDocumentStorage,
+    InMemoryIssueProvider,
+)
 
 URL = "/workflows/meeting-prep"
 
@@ -115,10 +120,14 @@ class TestFailures:
             response = client.post(URL, json=body())
 
         assert response.status_code == 503
-        assert response.headers["Retry-After"] == "5"
+        # The event exists now: resending the same body would make a second one, so the
+        # transient failure is not "retryable" as-is. The caller resumes with event_id.
+        assert "Retry-After" not in response.headers
         error = response.json()["error"]
         assert error["code"] == "provider_unavailable"
-        assert error["retryable"] is True
+        assert error["retryable"] is False
+        assert error["message"].startswith("Storage is temporarily unavailable. ")
+        assert "event_id" in error["message"]
         assert error["failed_step"] == "save_agenda"
         assert [(c["step"], c["reused"]) for c in error["completed"]] == [("create_event", False)]
 
@@ -146,6 +155,47 @@ class TestFailures:
         )
         assert [c["step"] for c in error["completed"]] == ["create_event", "save_agenda"]
         assert "Retry-After" not in response.headers
+
+    def test_tracker_down_after_two_writes_says_resume_not_retry(self) -> None:
+        client = client_with(issues=FailingIssueProvider())
+        response = client.post(URL, json=body())
+
+        assert response.status_code == 503
+        assert "Retry-After" not in response.headers
+        error = response.json()["error"]
+        assert (error["code"], error["retryable"], error["failed_step"]) == (
+            "provider_unavailable",
+            False,
+            "create_issue",
+        )
+        assert [c["step"] for c in error["completed"]] == ["create_event", "save_agenda"]
+
+    def test_resume_after_the_failure_reuses_the_event_and_agenda(self) -> None:
+        storage = InMemoryDocumentStorage()
+        failing = client_with(storage=storage, issues=FailingIssueProvider())
+        first = failing.post(URL, json=body()).json()["error"]
+        event_id = first["completed"][0]["id"]
+
+        # The event lives on this app's calendar, so resume on the same app with a working
+        # tracker swapped in.
+        failing.app.state.meeting_prep._issues = InMemoryIssueProvider()
+        resumed = failing.post(URL, json=body(event_id=event_id))
+
+        assert resumed.status_code == 201
+        steps = {s["step"]: s["reused"] for s in resumed.json()["steps"]}
+        assert steps == {"create_event": True, "save_agenda": True, "create_issue": False}
+
+    def test_failure_before_any_write_stays_retryable(self) -> None:
+        client = client_with(storage=FailingDocumentStorage())
+        response = client.post(URL, json=body(event_id="no-such-event"))
+        # Nothing was written (the event lookup failed), so nothing changes for the caller.
+        assert response.json()["error"]["completed"] == []
+
+    def test_storage_messages_are_ours_not_the_adapters(self) -> None:
+        client = client_with(storage=FailingDocumentStorage())
+        error = client.post(URL, json=body()).json()["error"]
+        assert "Controlled failure" not in error["message"]
+        assert "/baskd/meeting-prep/" not in error["message"]
 
     def test_access_denied_is_403(self) -> None:
         client = client_with(issues=FailingIssueProvider(ErrorCode.ACCESS_DENIED))

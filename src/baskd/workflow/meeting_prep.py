@@ -214,29 +214,32 @@ def _from_calendar(error: SharedCalendarError, event_id: str | None) -> errors.C
     return errors.ProviderError(error.message)
 
 
+# Messages are ours and fixed per outcome. The other teams' messages differ between
+# implementations and can carry paths or SDK exception names, so they are not passed through
+# (Team 3's review of PR #73). The step, code and completed ids say what happened.
+
+
 def _from_storage(error: StorageError) -> errors.CalendarError:
-    message = f"Storage: {error.message or error.code}"
     if isinstance(error, InvalidRequestError | FileTooLargeError):
-        return errors.InvalidRequest(message)
+        return errors.InvalidRequest("Storage rejected the agenda")
     if isinstance(error, PermissionDeniedError):
-        return errors.ProviderAuthError(message)
+        return errors.ProviderAuthError("Storage denied access")
     if isinstance(error, ProviderUnavailableError):
-        # Safe to retry: the agenda's path is fixed, so a save that did land is found.
-        return errors.ProviderUnavailable(message)
-    return errors.ProviderError(message)
+        # The agenda's path is fixed, so a save that did land is found on resume.
+        return errors.ProviderUnavailable("Storage is temporarily unavailable")
+    return errors.ProviderError("Storage failed")
 
 
 def _from_issues(error: IssueError, *, reading: bool) -> errors.CalendarError:
-    message = f"Issue tracker: {error.message}"
     if error.code is IssueCode.ACCESS_DENIED:
-        return errors.ProviderAuthError(message)
+        return errors.ProviderAuthError("Issue tracker denied access")
     if error.code is IssueCode.INVALID_INPUT:
-        return errors.InvalidRequest(message)
+        return errors.InvalidRequest("Issue tracker rejected the issue")
     if error.code is IssueCode.PROVIDER_ERROR and (reading or not error.may_have_applied):
         # Nothing was written (a failed lookup, or a create that never reached the provider).
-        return errors.ProviderUnavailable(message)
+        return errors.ProviderUnavailable("Issue tracker is temporarily unavailable")
     # The issue may exist now. Not retryable as-is; a resumed run finds it by its tag first.
-    return errors.ProviderError(message)
+    return errors.ProviderError("Issue tracker failed; the issue may have been created")
 
 
 def _utc(value: datetime) -> str:

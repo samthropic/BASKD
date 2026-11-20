@@ -184,15 +184,20 @@ Nothing is rolled back and the service never retries on its own. A failure retur
 error envelope plus the step that failed and what already exists:
 
 ```json
-{"error": {"code": "provider_unavailable", "message": "Storage: …", "retryable": true,
+{"error": {"code": "provider_unavailable",
+           "message": "Storage is temporarily unavailable. Earlier steps already ran: …",
+           "retryable": false,
            "failed_step": "save_agenda",
            "completed": [{"step": "create_event", "id": "abc123", "reused": false}]}}
 ```
 
 To finish, send the same body again with `"event_id": "abc123"`: the event is read instead
-of created, and each finished step is found (`reused: true`) instead of repeated.
-`retryable: false` with `provider_error` at `create_issue` means the issue may have been
-created; the resumed run finds it by its tag before creating one.
+of created, and each finished step is found (`reused: true`) instead of repeated. Once
+`completed` is non-empty, `retryable` is `false` and there is no `Retry-After`, even for a
+transient failure: resending the original body unchanged would create a second event.
+`provider_error` at `create_issue` means the issue may have been created; the resumed run
+finds it by its tag before creating one. Error messages are BASK'D's own and fixed per
+outcome; the other teams' messages are not passed through.
 
 ### Errors
 
