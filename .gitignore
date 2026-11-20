@@ -181,6 +181,8 @@ __marimo__/
 
 # BASK'D: local secrets and provider credentials (never commit these)
 secrets/*
+# Team 3's `python -m dropbox_client_impl login` saves the Dropbox refresh token here.
+.dropbox_token.json
 !secrets/.gitkeep
 *.service-account.json
 .env.*
@@ -199,3 +201,5 @@ infra/.terraform/
 tfplan
 *.tfvars
 !*.tfvars.example
+# scripts/hw3_evidence.py --out target used in infra/README.md; pasted into #68, not committed.
+infra/evidence.md

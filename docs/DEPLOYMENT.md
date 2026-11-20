@@ -17,6 +17,12 @@ directory). See the README table. Two of them are secrets:
   the file form when the platform can mount a secret as a file, the inline form when it can
   only inject environment variables.
 - `BASKD_GOOGLE_CALENDAR_ID` is not secret but is environment-specific.
+- HW3: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` (with
+  `BASKD_WORKFLOW_STORAGE=team3` or `team1`) and `TRELLO_API_KEY`, `TRELLO_TOKEN` (with
+  `BASKD_WORKFLOW_ISSUES=team4`) are the test accounts' credentials. The other teams' packages
+  read them from the process environment, so the platform must inject them as environment
+  variables. `TRELLO_LIST_ID` is not secret. The service refuses to start when the chosen
+  implementation's variables are missing.
 
 Health checks:
 
@@ -83,6 +89,27 @@ The service stays private (`invokers` in Terraform) because the API has no calle
 authentication of its own; callers send `gcloud auth print-identity-token`. Fly.io, Render and
 Railway would also run the image, with the key in their secret store as
 `BASKD_GOOGLE_CREDENTIALS_JSON`.
+
+**Who can call it (HW3 Milestone 1). Decision (Nov 20): `invokers = ["domain:nyu.edu"]`.**
+Course staff must be able to call the deployed workflow without asking for access. Any NYU
+Google account can call the service, staff included, and there is no list of emails to collect
+or keep current. The service still is not public: Terraform rejects `allUsers` and
+`allAuthenticatedUsers`, because the workflow writes to our test calendar, Dropbox and Trello,
+and an open endpoint would let anyone on the internet fill them.
+
+What we accept: classmates can call it too. The accounts behind it are throwaway test
+accounts, and anything a call creates can be deleted. If that changes (a real user's data
+behind the service, or abuse), switch to named principals, `invokers = ["user:<email>", ...]`.
+
+To call it, a caller signs in with their NYU account (`gcloud auth login`) and sends
+`Authorization: Bearer $(gcloud auth print-identity-token)` to the service URL from the
+submission. The invoker role does not let them look the URL up themselves. `infra/README.md`
+step 4 has the commands. Milestone 2 replaces this with real user sign-in.
+
+**HW3 implementation swap and failure demo.** Both are configuration changes:
+`workflow_storage` / `workflow_issues` in the environment's `.tfvars`, `terraform apply`, then
+move traffic to the new revision (`infra/README.md`, "Switching the HW3 implementations").
+`GET /health` shows which implementations are live, so the evidence can show the change.
 
 ## 5. Promoting a release
 

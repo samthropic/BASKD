@@ -6,6 +6,16 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-11-20
+
+HW3 Milestone 1: one API operation, `POST /workflows/meeting-prep`, composes our calendar with
+Team 3's Dropbox storage (Team 1's by configuration) and Team 4's Trello issue tracker, and is
+deployed on Cloud Run with the test accounts' credentials in Secret Manager. Tag `v0.3.0`.
+No breaking changes: existing routes, codes and statuses are unchanged. Design and review:
+`DESIGN.md` H1–H9 (#73), reviewed by Team 3.
+
 ### Added
 - HW3: the service can use another team's Document Storage and issue tracker, chosen by
   `BASKD_WORKFLOW_STORAGE` (`team3`, `team1`, `memory`, `failing`) and
@@ -15,8 +25,10 @@ Release notes on GitHub are built from the matching section here.
 - `POST /workflows/meeting-prep` (HW3 Milestone 1): creates a calendar event, saves its
   agenda in the configured storage and opens a prep issue in the configured tracker. A
   failed step returns the error envelope plus `failed_step` and `completed`; resending with
-  `event_id` resumes without duplicating anything. Failure log lines carry `failed_step`.
-  (#66)
+  `event_id` resumes without duplicating anything. Once a step has written, the failure is
+  `retryable: false` without `Retry-After` and its message says to resume with `event_id`;
+  storage and tracker errors carry BASK'D's own fixed messages (from Team 3's review).
+  Failure log lines carry `failed_step`. (#66, #75)
 
 ### Dependencies
 - Added the storage contract `cloud-storage-api` (tag `0.3.1`), Team 3's
@@ -24,6 +36,37 @@ Release notes on GitHub are built from the matching section here.
   `team1-dropbox-storage` (commit `784be97`; no tag yet), and Team 4's
   `issue-tracker-contract` and `team-4-issue-tracker-trello`. These bring in the Dropbox SDK
   (`dropbox==12.1.0`). (#64)
+
+### Setup and configuration
+
+- HW3 deployment (#67): Terraform variables `workflow_storage`, `workflow_issues` and
+  `trello_list_id` set `BASKD_WORKFLOW_STORAGE`, `BASKD_WORKFLOW_ISSUES` and `TRELLO_LIST_ID`
+  on Cloud Run. Five new Secret Manager secrets hold the Dropbox and Trello credentials; only
+  the chosen implementation's secrets are injected. Fill them with
+  `scripts/add_workflow_secrets.sh prod|staging` before switching away from `memory`.
+  `infra/README.md` ("Switching the HW3 implementations") covers the swap and failure demos.
+  `scripts/hw3_evidence.py` runs each demo on the deployed service and confirms the records
+  in Google Calendar, Dropbox and Trello.
+- The deployed service is callable by any NYU Google account (`invokers = ["domain:nyu.edu"]`)
+  so course staff can reach it; `invokers` now rejects `allUsers` and `allAuthenticatedUsers`.
+  The decision is in `docs/DEPLOYMENT.md` §4. `docs/HUMAN_STEPS.md` §8 covers creating the
+  Dropbox and Trello test accounts (#62).
+
+### Known limitations
+- Resending the original body without `event_id` after a failure creates a second event: the
+  contracts have no idempotent create. Always resume with `event_id` (`DESIGN.md` H6).
+  Milestone 2 adds idempotency keys.
+- A folder named `<event id>.md` at the agenda path is reported as a saved agenda, and the
+  Dropbox SDK's backoff retries are turned off through private fields. Both are tracked in
+  #77.
+- Team 1's and Team 3's Dropbox packages raise different contract errors for the same Dropbox
+  failure, so swapping storage can change the status a caller sees (`failed_step` and
+  `completed` do not change). Recorded in #70 and `DESIGN.md` H5.
+- Team 1's storage package has no tag yet; it is pinned to commit `784be97`.
+- Resuming after a failure is tested with controlled implementations only, not on the
+  deployed service.
+- The deployed service is callable by any NYU Google account (identity token), not by end
+  users with their own sign-in; that comes in Milestone 2.
 
 ## [0.2.0] - 2026-11-11
 
@@ -211,7 +254,8 @@ First working version (spec Levels 1–2, Milestone 1). Tag `v0.1.0-alpha.1`, co
   turned an all-day event into a timed one, and a series failed with Google's own "Missing
   time zone definition" error. Single occurrences of a recurring event can still be replaced.
 
-[Unreleased]: https://github.com/samthropic/BASKD/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/samthropic/BASKD/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/samthropic/BASKD/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/samthropic/BASKD/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/samthropic/BASKD/compare/v0.1.0-rc.1...v0.1.0
 [0.1.0-rc.1]: https://github.com/samthropic/BASKD/compare/v0.1.0-alpha.1...v0.1.0-rc.1
