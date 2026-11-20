@@ -86,30 +86,30 @@ an identity token, and teardown. It has two environments, `prod` (the one we dem
 Why Cloud Run: our project, the Calendar service account and the test calendar already live in
 Google Cloud, it scales to zero, and the key can be mounted from Secret Manager as a file.
 The service stays private (`invokers` in Terraform) because the API has no caller
-authentication of its own; callers send `gcloud auth print-identity-token`.
+authentication of its own; callers send `gcloud auth print-identity-token`. Fly.io, Render and
+Railway would also run the image, with the key in their secret store as
+`BASKD_GOOGLE_CREDENTIALS_JSON`.
 
-**Who can call it (HW3 Milestone 1).** Course staff must be able to call the deployed
-workflow without asking for access. We keep the service private and grant `roles/run.invoker`
-through `invokers` rather than opening it to `allUsers`. The workflow writes to our test
-calendar, Dropbox and Trello, and an open endpoint would let anyone fill them. The two
-practical settings:
+**Who can call it (HW3 Milestone 1). Decision (Nov 20): `invokers = ["domain:nyu.edu"]`.**
+Course staff must be able to call the deployed workflow without asking for access. Any NYU
+Google account can call the service, staff included, and there is no list of emails to collect
+or keep current. The service still is not public: Terraform rejects `allUsers` and
+`allAuthenticatedUsers`, because the workflow writes to our test calendar, Dropbox and Trello,
+and an open endpoint would let anyone on the internet fill them.
 
-- `invokers = ["user:<staff email>", ...]`: only the people named. Needs their Google
-  account emails before submission.
-- `invokers = ["domain:nyu.edu"]`: any NYU Google account, staff included, with no list to
-  keep. Classmates could call it too. That is acceptable for throwaway test accounts, and it
-  is what other teams' services effectively allow (Team 3's are public).
+What we accept: classmates can call it too. The accounts behind it are throwaway test
+accounts, and anything a call creates can be deleted. If that changes (a real user's data
+behind the service, or abuse), switch to named principals, `invokers = ["user:<email>", ...]`.
 
-Either way the caller runs `gcloud auth login` with that account and sends
-`Authorization: Bearer $(gcloud auth print-identity-token)`; `infra/README.md` step 4 has the
-commands. Milestone 2 replaces this with real user sign-in.
+To call it, a caller signs in with their NYU account (`gcloud auth login`) and sends
+`Authorization: Bearer $(gcloud auth print-identity-token)` to the service URL from the
+submission. The invoker role does not let them look the URL up themselves. `infra/README.md`
+step 4 has the commands. Milestone 2 replaces this with real user sign-in.
 
 **HW3 implementation swap and failure demo.** Both are configuration changes:
 `workflow_storage` / `workflow_issues` in the environment's `.tfvars`, `terraform apply`, then
 move traffic to the new revision (`infra/README.md`, "Switching the HW3 implementations").
-`GET /health` shows which implementations are live, so the evidence can show the change. Fly.io, Render and
-Railway would also run the image, with the key in their secret store as
-`BASKD_GOOGLE_CREDENTIALS_JSON`.
+`GET /health` shows which implementations are live, so the evidence can show the change.
 
 ## 5. Promoting a release
 

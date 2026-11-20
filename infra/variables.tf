@@ -38,9 +38,14 @@ variable "image" {
 }
 
 variable "invokers" {
-  description = "Principals allowed to call the service, e.g. [\"user:someone@nyu.edu\"]. The service has no auth of its own, so it is private by default."
+  description = "Principals allowed to call the service, e.g. [\"domain:nyu.edu\"] (what we deploy with, docs/DEPLOYMENT.md §4) or [\"user:someone@nyu.edu\"]. The service has no auth of its own, so it is private by default and never public."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for p in var.invokers : !contains(["allUsers", "allAuthenticatedUsers"], p)])
+    error_message = "The service must not be public: the API has no auth of its own and the HW3 workflow writes to our test accounts. Name principals, e.g. domain:nyu.edu."
+  }
 }
 
 variable "workflow_storage" {

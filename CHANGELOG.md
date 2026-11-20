@@ -14,9 +14,10 @@ Release notes on GitHub are built from the matching section here.
   the chosen implementation's secrets are injected. Fill them with
   `scripts/add_workflow_secrets.sh prod|staging` before switching away from `memory`.
   `infra/README.md` ("Switching the HW3 implementations") covers the swap and failure demos.
-- `docs/DEPLOYMENT.md` §4 records who may call the deployed service (`invokers`, by staff
-  email or `domain:nyu.edu`); `docs/HUMAN_STEPS.md` §8 covers creating the Dropbox and Trello
-  test accounts (#62).
+- The deployed service is callable by any NYU Google account (`invokers = ["domain:nyu.edu"]`)
+  so course staff can reach it; `invokers` now rejects `allUsers` and `allAuthenticatedUsers`.
+  The decision is in `docs/DEPLOYMENT.md` §4. `docs/HUMAN_STEPS.md` §8 covers creating the
+  Dropbox and Trello test accounts (#62).
 
 ## [0.2.0] - 2026-11-11
 

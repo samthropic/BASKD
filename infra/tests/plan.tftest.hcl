@@ -53,6 +53,36 @@ run "service_runs_the_pinned_image_with_the_key_mounted" {
   }
 }
 
+run "nyu_domain_can_invoke" {
+  command = plan
+
+  variables {
+    image    = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    invokers = ["domain:nyu.edu"]
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_service_iam_member.invokers["domain:nyu.edu"].member == "domain:nyu.edu"
+    error_message = "domain:nyu.edu is how course staff call the service (docs/DEPLOYMENT.md §4)."
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_service_iam_member.invokers["domain:nyu.edu"].role == "roles/run.invoker"
+    error_message = "Invokers may only invoke."
+  }
+}
+
+run "public_invokers_are_rejected" {
+  command = plan
+
+  variables {
+    image    = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    invokers = ["domain:nyu.edu", "allUsers"]
+  }
+
+  expect_failures = [var.invokers]
+}
+
 run "staging_never_shares_names_with_prod" {
   command = plan
 

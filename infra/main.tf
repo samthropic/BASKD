@@ -271,7 +271,7 @@ resource "google_cloud_run_v2_service" "api" {
   ]
 }
 
-# Who may call it. Private by default; add teammates and graders in `invokers`.
+# Who may call it. Private by default; we deploy with `domain:nyu.edu` (docs/DEPLOYMENT.md §4).
 resource "google_cloud_run_v2_service_iam_member" "invokers" {
   for_each = var.image == null ? toset([]) : toset(var.invokers)
 

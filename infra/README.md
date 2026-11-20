@@ -24,7 +24,7 @@ One configuration serves two environments with separate state and separate resou
 | `google_monitoring_dashboard.service` (`observability.tf`) | The Level 3 dashboard (`terraform output dashboard_url`) | Someone has to rebuild the charts by hand in the console |
 | `google_monitoring_slo.get_availability`, `.get_latency` (`slo.tf`) | The two SLOs for `GET /events/{id}` and their error budgets (`terraform output slo_url`, `docs/SLO.md`) | No promise to measure against, and nothing for the alert to burn |
 | `google_monitoring_alert_policy.get_availability_fast_burn` (`slo.tf`) | Emails `alert_emails` when the availability budget burns at 14.4x | Nobody hears about a failing service until a user complains |
-| `google_cloud_run_v2_service_iam_member.invokers` | Lets named people call the service | Only project owners can call it |
+| `google_cloud_run_v2_service_iam_member.invokers` | Lets `invokers` call the service; we use `domain:nyu.edu` so course staff can (`docs/DEPLOYMENT.md` §4). Public principals are rejected | Only project owners can call it |
 | `google_iam_workload_identity_pool_provider.github` (`deploy.tf`) | Lets this repository's `v*` tags (prod) or `staging-*` tags (staging) sign in from GitHub Actions without a stored key | The deploy workflow cannot reach Google |
 | `google_service_account.deploy` (`deploy.tf`) | The identity releases deploy as: push images, roll out revisions, move traffic, call the service for the smoke check. It cannot read the key or change IAM | Releases would need a long-lived key in GitHub, or a person running `gcloud` |
 
@@ -140,8 +140,9 @@ terraform apply tfplan
 
 ## Step 4: call the API
 
-The service is private: callers send a Google identity token. Project owners can call it; add
-anyone else (teammates, the TAs) to `invokers` in `prod.tfvars` and apply.
+The service is private: callers send a Google identity token. Project owners can call it, and
+so can anyone in `invokers`. We set `invokers = ["domain:nyu.edu"]` so teammates and course
+staff can call it with their NYU account (`docs/DEPLOYMENT.md` §4); `allUsers` is rejected.
 
 ```bash
 URL=$(terraform output -raw service_url)

@@ -9,9 +9,10 @@ calendar_id = "<the value of BASKD_GOOGLE_CALENDAR_ID in your .env>"
 # Leave commented out on the first apply. After pushing an image (README step 3):
 # image = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:<digest>"
 
-# Who may call the service, e.g. teammates and the TAs (docs/DEPLOYMENT.md §4 has the choice):
-# invokers = ["user:someone@nyu.edu"]
-# invokers = ["domain:nyu.edu"]       # any NYU Google account
+# Who may call the service. We use any NYU Google account so course staff can call it
+# (docs/DEPLOYMENT.md §4 has the decision); named people would be ["user:someone@nyu.edu"].
+# allUsers / allAuthenticatedUsers are rejected.
+invokers = ["domain:nyu.edu"]
 
 # HW3 workflow: whose implementation backs storage and the issue tracker. Before choosing
 # team3/team1 or team4, put the credentials in Secret Manager (scripts/add_workflow_secrets.sh),
