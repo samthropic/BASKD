@@ -209,6 +209,20 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$URL/hea
 `failing` makes every call to that vertical fail with a provider error, so the workflow's
 partial-failure response can be shown on the deployed service. Set it back afterwards.
 
+**The Milestone 1 evidence (#68)** is three runs, one configuration change apart. With the
+Dropbox and Trello variables still exported from step 2b, `scripts/hw3_evidence.py` also
+confirms the file and the card in Dropbox and Trello themselves:
+
+| Run | `workflow_storage` | `workflow_issues` | Command |
+| --- | --- | --- | --- |
+| Composed workflow | `team3` | `team4` | `python ../scripts/hw3_evidence.py "$URL" compose --out evidence.md` |
+| Swap one vertical | `team1` | `team4` | `python ../scripts/hw3_evidence.py "$URL" swap --out evidence.md` |
+| Controlled failure | `team1` | `failing` | `python ../scripts/hw3_evidence.py "$URL" failure --out evidence.md` |
+
+Export `BASKD_SMOKE_TOKEN=$(gcloud auth print-identity-token)` first. Each run exits non-zero
+if the service did not behave as documented. Paste `evidence.md` into #68, and keep the
+records: graders look them up in the providers.
+
 The workflow's provider and identity are fixed names derived from the environment, and match
 these outputs:
 

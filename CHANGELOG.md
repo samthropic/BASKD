@@ -14,6 +14,8 @@ Release notes on GitHub are built from the matching section here.
   the chosen implementation's secrets are injected. Fill them with
   `scripts/add_workflow_secrets.sh prod|staging` before switching away from `memory`.
   `infra/README.md` ("Switching the HW3 implementations") covers the swap and failure demos.
+  `scripts/hw3_evidence.py` runs each demo on the deployed service and confirms the records
+  in Google Calendar, Dropbox and Trello.
 - The deployed service is callable by any NYU Google account (`invokers = ["domain:nyu.edu"]`)
   so course staff can reach it; `invokers` now rejects `allUsers` and `allAuthenticatedUsers`.
   The decision is in `docs/DEPLOYMENT.md` §4. `docs/HUMAN_STEPS.md` §8 covers creating the

@@ -201,3 +201,5 @@ infra/.terraform/
 tfplan
 *.tfvars
 !*.tfvars.example
+# scripts/hw3_evidence.py --out target used in infra/README.md; pasted into #68, not committed.
+infra/evidence.md
