@@ -38,9 +38,47 @@ variable "image" {
 }
 
 variable "invokers" {
-  description = "Principals allowed to call the service, e.g. [\"user:someone@nyu.edu\"]. The service has no auth of its own, so it is private by default."
+  description = "Principals allowed to call the service, e.g. [\"domain:nyu.edu\"] (what we deploy with, docs/DEPLOYMENT.md §4) or [\"user:someone@nyu.edu\"]. The service has no auth of its own, so it is private by default and never public."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for p in var.invokers : !contains(["allUsers", "allAuthenticatedUsers"], p)])
+    error_message = "The service must not be public: the API has no auth of its own and the HW3 workflow writes to our test accounts. Name principals, e.g. domain:nyu.edu."
+  }
+}
+
+variable "workflow_storage" {
+  description = "BASKD_WORKFLOW_STORAGE: whose Document Storage the HW3 workflow uses. team3 or team1 (Dropbox; needs the dropbox-* secrets to have a version), memory, or failing (every call fails: the failure demo)."
+  type        = string
+  default     = "memory"
+
+  validation {
+    condition     = contains(["team3", "team1", "memory", "failing"], var.workflow_storage)
+    error_message = "workflow_storage must be team3, team1, memory or failing."
+  }
+}
+
+variable "workflow_issues" {
+  description = "BASKD_WORKFLOW_ISSUES: whose issue tracker the HW3 workflow uses. team4 (Trello; needs the trello-* secrets to have a version and trello_list_id), memory, or failing."
+  type        = string
+  default     = "memory"
+
+  validation {
+    condition     = contains(["team4", "memory", "failing"], var.workflow_issues)
+    error_message = "workflow_issues must be team4, memory or failing."
+  }
+}
+
+variable "trello_list_id" {
+  description = "TRELLO_LIST_ID: the 24-character id of the test board's list that issues go in. Not secret (like calendar_id); required when workflow_issues is team4."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.trello_list_id == null || can(regex("^[0-9a-f]{24}$", var.trello_list_id))
+    error_message = "trello_list_id must be the list's 24-character hexadecimal id."
+  }
 }
 
 variable "max_instances" {

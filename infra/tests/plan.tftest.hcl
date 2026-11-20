@@ -53,6 +53,36 @@ run "service_runs_the_pinned_image_with_the_key_mounted" {
   }
 }
 
+run "nyu_domain_can_invoke" {
+  command = plan
+
+  variables {
+    image    = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    invokers = ["domain:nyu.edu"]
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_service_iam_member.invokers["domain:nyu.edu"].member == "domain:nyu.edu"
+    error_message = "domain:nyu.edu is how course staff call the service (docs/DEPLOYMENT.md §4)."
+  }
+
+  assert {
+    condition     = google_cloud_run_v2_service_iam_member.invokers["domain:nyu.edu"].role == "roles/run.invoker"
+    error_message = "Invokers may only invoke."
+  }
+}
+
+run "public_invokers_are_rejected" {
+  command = plan
+
+  variables {
+    image    = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    invokers = ["domain:nyu.edu", "allUsers"]
+  }
+
+  expect_failures = [var.invokers]
+}
+
 run "staging_never_shares_names_with_prod" {
   command = plan
 
@@ -194,5 +224,140 @@ run "staging_has_its_own_slo_service" {
   assert {
     condition     = google_monitoring_custom_service.api.service_id == "baskd-staging-api"
     error_message = "A staging drill must never burn prod's error budget."
+  }
+}
+
+run "workflow_defaults_to_our_memory_implementations_with_no_secret_env" {
+  command = plan
+
+  variables {
+    image = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+
+  assert {
+    condition = alltrue([
+      for wanted in ["BASKD_WORKFLOW_STORAGE=memory", "BASKD_WORKFLOW_ISSUES=memory"] : contains(
+        [for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : "${e.name}=${e.value == null ? "" : e.value}"],
+        wanted,
+      )
+    ])
+    error_message = "Without a choice, the workflow must use our in-memory implementations."
+  }
+
+  assert {
+    condition = length([
+      for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : e.name
+      if startswith(e.name, "DROPBOX_") || startswith(e.name, "TRELLO_")
+    ]) == 0
+    error_message = "A revision that does not use Dropbox or Trello must not depend on their secrets."
+  }
+
+  assert {
+    condition     = length(google_secret_manager_secret.workflow) == 5 && google_secret_manager_secret.workflow["DROPBOX_REFRESH_TOKEN"].secret_id == "baskd-dropbox-refresh-token"
+    error_message = "The five credential secrets exist (empty) whatever is chosen, so they can be filled before a switch."
+  }
+}
+
+run "team3_and_team4_read_their_credentials_from_secret_manager" {
+  command = plan
+
+  variables {
+    image            = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    workflow_storage = "team3"
+    workflow_issues  = "team4"
+    trello_list_id   = "0123456789abcdef01234567"
+  }
+
+  assert {
+    condition = toset([
+      for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : e.name
+      if length(e.value_source) > 0
+      ]) == toset([
+      "DROPBOX_APP_KEY", "DROPBOX_APP_SECRET", "DROPBOX_REFRESH_TOKEN", "TRELLO_API_KEY", "TRELLO_TOKEN",
+    ])
+    error_message = "Exactly the five credentials come from Secret Manager."
+  }
+
+  assert {
+    condition = alltrue([
+      for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env :
+      e.value_source[0].secret_key_ref[0].version == "latest" if length(e.value_source) > 0
+    ])
+    error_message = "Credentials follow the latest secret version, so a rotation needs no Terraform change."
+  }
+
+  assert {
+    condition = contains(
+      [for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : "${e.name}=${e.value == null ? "" : e.value}"],
+      "TRELLO_LIST_ID=0123456789abcdef01234567",
+    )
+    error_message = "The list id is plain configuration, like the calendar id."
+  }
+
+  assert {
+    condition = alltrue([
+      for member in google_secret_manager_secret_iam_member.runtime_reads_workflow :
+      member.role == "roles/secretmanager.secretAccessor"
+    ]) && length(google_secret_manager_secret_iam_member.runtime_reads_workflow) == 5
+    error_message = "The runtime identity may read each credential secret, and only read it."
+  }
+}
+
+run "swapping_storage_to_team1_changes_only_configuration" {
+  command = plan
+
+  variables {
+    image            = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    workflow_storage = "team1"
+  }
+
+  assert {
+    condition = contains(
+      [for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : "${e.name}=${e.value == null ? "" : e.value}"],
+      "BASKD_WORKFLOW_STORAGE=team1",
+    )
+    error_message = "The swap is one variable."
+  }
+
+  assert {
+    condition = length([
+      for e in google_cloud_run_v2_service.api[0].template[0].containers[0].env : e.name
+      if startswith(e.name, "DROPBOX_")
+    ]) == 3
+    error_message = "Team 1 takes the same three Dropbox credentials as Team 3."
+  }
+}
+
+run "trello_without_a_list_id_is_rejected" {
+  command = plan
+
+  variables {
+    image           = "us-east1-docker.pkg.dev/baskd-calendar/baskd/baskd@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    workflow_issues = "team4"
+  }
+
+  expect_failures = [google_cloud_run_v2_service.api]
+}
+
+run "unknown_implementation_is_rejected" {
+  command = plan
+
+  variables {
+    workflow_storage = "team6"
+  }
+
+  expect_failures = [var.workflow_storage]
+}
+
+run "staging_has_its_own_credential_secrets" {
+  command = plan
+
+  variables {
+    environment = "staging"
+  }
+
+  assert {
+    condition     = google_secret_manager_secret.workflow["TRELLO_TOKEN"].secret_id == "baskd-staging-trello-token"
+    error_message = "staging's credentials must never be prod's secrets."
   }
 }
