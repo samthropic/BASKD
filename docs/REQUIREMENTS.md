@@ -106,7 +106,7 @@ integration run.
 | **No retries inside the service for M1** | SDK `num_retries` | Retrying a `POST` without an idempotency key can create duplicates; we return 503 + `Retry-After` when nothing was written, and `502 provider_error` (not retryable) when a create or replace may have been applied (#35) | "Repeated requests / provider failures" level adds retries with idempotency |
 | **One error envelope** `{"error": {code, message, details?}}` | FastAPI's default `{"detail": ...}` | Stable machine-readable `code` is testable and does not leak provider messages except where useful (`invalid_input`) | Custom handlers in `api/errors.py` |
 | **Synchronous handlers** | `async` + async Google client | The official SDK is sync; FastAPI runs sync handlers in a thread pool; simpler to reason about | Per-call `AuthorizedHttp` for thread safety |
-| **`uv` + lockfile, Python 3.12 only** | pip + requirements.txt, Poetry | Exact reproduction with one command; fast CI | Everyone installs `uv` |
+| **`uv` + lockfile, develop on Python 3.12, support 3.12+** | pip + requirements.txt, Poetry; pinning `<3.13` | Exact reproduction with one command; fast CI. The package was pinned to 3.12 only until Team 3 needed it on 3.14 for HW3, so it now declares `>=3.12` and CI tests 3.14 too | Everyone installs `uv`; a new Python release can break us before CI covers it |
 | **Default provider = `memory`** | Fail without config | `uv run uvicorn ...` works on a fresh clone; `/health` and the startup log always state the provider in use | A teammate must set `BASKD_PROVIDER=google` deliberately |
 
 ## 3. Provider limitations identified (and how the API reflects them)

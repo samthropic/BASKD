@@ -102,9 +102,9 @@ notice and skips; nothing else is affected.
 Repository → *Settings* → *Branches* (or *Rules → Rulesets*) → protect `main`:
 
 - Require a pull request before merging, with **1 approval**, and dismiss stale approvals.
-- Require status checks to pass: `Lint, types, unit tests` and `Docker image builds and
-  serves /health` (the integration job cannot be required because it legitimately skips on
-  forks).
+- Require status checks to pass: `Lint, types, unit tests`, `Unit tests on Python 3.14` and
+  `Docker image builds and serves /health` (the integration job cannot be required because
+  it legitimately skips on forks).
 - Require branches to be up to date before merging; block force-pushes and deletions.
 
 Also enable *Settings → General → Pull Requests → Allow squash merging* (our merge strategy)
