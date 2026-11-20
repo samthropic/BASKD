@@ -827,16 +827,18 @@ Clients that ignore unknown fields are unaffected. The CHANGELOG announces both 
 
 | Source | Error | Our `code` | Status | `retryable` |
 | --- | --- | --- | --- | --- |
-| Calendar | Shared `invalid_input`, `not_found`, `access_denied`, `provider_error`, `provider_unavailable` | Same code | 400, 404, 403, 502, 503 | As the shared error says |
+| Calendar | Shared `invalid_input`, `access_denied`, `provider_error`, `provider_unavailable` | Same code | 400, 403, 502, 503 | As the shared error says |
 | Calendar | `not_found` while resuming with an unknown `event_id` | `not_found` | 404 | false |
+| Calendar | `not_found` from a create (the caller named no event) | `provider_error` | 502 | false |
 | Storage | `InvalidRequestError`, `FileTooLargeError` | `invalid_input` | 400 | false |
 | Storage | `PermissionDeniedError` | `access_denied` | 403 | false |
 | Storage | `ProviderUnavailableError` | `provider_unavailable` | 503 + `Retry-After` | true: the save is idempotent by path |
 | Storage | `NotFoundError`, `InvalidOperationError`, `ProviderError`, any other `StorageError` | `provider_error` | 502 | false |
 | Issue tracker | `ServiceError` `access_denied` | `access_denied` | 403 | false |
 | Issue tracker | `ServiceError` `invalid_input` | `invalid_input` | 400 | false |
-| Issue tracker | `provider_error` with `may_have_applied=False` (nothing was sent) | `provider_unavailable` | 503 + `Retry-After` | true |
-| Issue tracker | `provider_error` with `may_have_applied=True` | `provider_error` | 502 | false |
+| Issue tracker | `provider_error` from the tag lookup (`list_issues`): a read, so nothing was written | `provider_unavailable` | 503 + `Retry-After` | true |
+| Issue tracker | `provider_error` from `create_issue` with `may_have_applied=False` (nothing was sent) | `provider_unavailable` | 503 + `Retry-After` | true |
+| Issue tracker | `provider_error` from `create_issue` with `may_have_applied=True` | `provider_error` | 502 | false |
 | Issue tracker | Any other code (`service_not_configured`, `internal_error`, …) | `provider_error` | 502 | false |
 | Any vertical | An exception outside the contract | `provider_error` | 502 | false |
 
