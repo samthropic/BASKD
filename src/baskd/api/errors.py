@@ -8,6 +8,9 @@ Every non-2xx response has the body::
 ``retryable`` says whether repeating the identical request may succeed. ``details`` is only
 present for validation errors and lists ``loc``/``msg``/``type`` per problem, without echoing
 the submitted input back.
+
+A failed step of the HW3 workflow adds ``failed_step`` and ``completed`` (the steps that
+finished, with the ids of what they made) to the same envelope.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from baskd.errors import (
     ProviderError,
     ProviderUnavailable,
 )
+from baskd.workflow.meeting_prep import WorkflowStepFailed
 
 #: Which HTTP status each domain error maps to. Most specific first; the base class last.
 STATUS_BY_ERROR: dict[type[CalendarError], int] = {
@@ -59,6 +63,23 @@ class ErrorBody(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorBody
+
+
+class CompletedStep(BaseModel):
+    step: str
+    id: str
+    reused: bool
+
+
+class WorkflowErrorBody(ErrorBody):
+    failed_step: str | None = None
+    completed: list[CompletedStep] | None = None
+
+
+class WorkflowErrorResponse(BaseModel):
+    """The envelope of ``/workflows`` routes. Validation errors have no step fields."""
+
+    error: WorkflowErrorBody
 
 
 def error_response(
@@ -121,6 +142,50 @@ def register_error_handlers(app: FastAPI) -> None:
         )
         return error_response(
             status_code, exc.code, exc.message, retryable=exc.retryable, headers=headers
+        )
+
+    @app.exception_handler(WorkflowStepFailed)
+    async def handle_workflow_step(request: Request, exc: WorkflowStepFailed) -> JSONResponse:
+        error = exc.error
+        status_code = status_for(error)
+        # Once a step has written something, resending the same body would create a second
+        # event: the request is no longer safe to retry as-is, even when the failure itself
+        # is transient. The caller resumes with the event id from `completed` instead.
+        resume = bool(exc.completed)
+        retryable = error.retryable and not resume
+        message = error.message
+        if resume:
+            message += (
+                ". Earlier steps already ran: resend with the event_id from `completed` to "
+                "resume; resending the request unchanged would create a second event."
+            )
+        log_failure(
+            request,
+            status=status_code,
+            error=error.code,
+            category=error.category,
+            retryable=retryable,
+            failed_step=exc.step,
+        )
+        body = WorkflowErrorResponse(
+            error=WorkflowErrorBody(
+                code=error.code,
+                message=message,
+                retryable=retryable,
+                failed_step=exc.step,
+                completed=[
+                    CompletedStep(step=done.step, id=done.id, reused=done.reused)
+                    for done in exc.completed
+                ],
+            )
+        )
+        headers = (
+            {"Retry-After": RETRY_AFTER_SECONDS}
+            if status_code == status.HTTP_503_SERVICE_UNAVAILABLE and retryable
+            else None
+        )
+        return JSONResponse(
+            status_code=status_code, content=body.model_dump(exclude_none=True), headers=headers
         )
 
     @app.exception_handler(RequestValidationError)

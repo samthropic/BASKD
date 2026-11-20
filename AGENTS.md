@@ -161,6 +161,7 @@ imports `api/` except `app.py`. Validation happens once, in `models.py`; errors 
 | Add a configuration setting | `settings.py` (+ fail-fast validation) → `.env.example` | README configuration table; `Dockerfile`/`ci.yml` if it is a secret | `tests/unit/test_settings_and_app.py` |
 | Add a provider (e.g. Microsoft Graph) | `providers/<name>.py` (five methods + `name`) → `settings.py` → `providers/__init__.py::build_provider` | `docs/REQUIREMENTS.md` §3; README | fake-SDK unit tests (copy the pattern in `test_google_provider.py`) + self-skipping `tests/integration/test_<name>.py` |
 | Add cross-cutting behaviour (auth, idempotency, retries, logging) | New module under `api/` (middleware/dependency) or a small service layer between `api/events.py` and the provider; wire it in `app.py::create_app` | README security note / `docs/NEXT_STEPS.md` | `test_api_*` via the `client` fixture; `FailingProvider` in `tests/conftest.py` for failure paths |
+| Add or swap a vertical implementation (HW3 storage or issue tracker) | `pyproject.toml` (`dependencies` + `[tool.uv.sources]` tag or rev) → `uv lock` → `settings.py` (a new `StorageImplementation`/`IssueImplementation` name + its credential check) → `workflow/composition.py` (the only module that imports it) | README configuration table; `.env.example`; `CHANGELOG.md` | `tests/unit/test_workflow_composition.py` (built offline, right contract type) |
 | Move to a new tag of the shared `calendar-contract` package | `pyproject.toml` (`[tool.uv.sources]` tag) → `uv lock` → `contract.py` if the shared models, codes or signatures changed | README "The shared contract with Teams 2 and 5"; `CHANGELOG.md` | `tests/unit/test_contract_conformance.py` (the shared suite runs there; remove an `xfail` once its issue is fixed) |
 | Change CI, release or Docker | `.github/workflows/ci.yml`, `release.yml`, `Dockerfile`, `.dockerignore` | this file §4/§5; `docs/DEPLOYMENT.md` | the `docker` CI job is the test |
 | Change the cloud infrastructure | `infra/*.tf` (Terraform; state in GCS, see `infra/README.md`) | `infra/README.md` (setup, teardown, resource table); `docs/DEPLOYMENT.md` §4 | `infra/tests/plan.tftest.hcl` (`terraform test`, offline) |
@@ -177,7 +178,8 @@ Google SDK in `tests/unit/test_google_provider.py`.
   Architecture and the reasoning behind it: `docs/ARCHITECTURE.md`.
 - Dependency inversion is the one rule we do not bend: `baskd/api` and `baskd/app.py` import
   `baskd.ports.CalendarProvider`, never a concrete provider. Only `baskd/providers/google.py`
-  may import Google SDKs. New behaviour that touches the provider goes into the port
+  may import Google SDKs, and only `baskd/workflow/composition.py` may import another team's
+  implementation package (everything else uses the shared contract packages). New behaviour that touches the provider goes into the port
   (`ports.py`), the fake (`providers/memory.py`), the real provider, and tests for all three.
 - Validate only at the boundary (`models.py`); providers trust their inputs and translate
   their failures into `baskd/errors.py` exceptions, never `HTTPException`.

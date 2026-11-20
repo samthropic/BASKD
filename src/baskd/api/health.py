@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -26,6 +26,9 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     provider: str
     version: str
+    #: Which storage and issue-tracker implementations the HW3 workflow is configured with.
+    workflow_storage: str
+    workflow_issues: str
 
 
 class ReadyResponse(BaseModel):
@@ -36,8 +39,15 @@ class ReadyResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse, summary="Liveness check")
-def health(provider: Provider) -> HealthResponse:
-    return HealthResponse(status="ok", provider=provider.name, version=__version__)
+def health(provider: Provider, request: Request) -> HealthResponse:
+    settings = request.app.state.settings
+    return HealthResponse(
+        status="ok",
+        provider=provider.name,
+        version=__version__,
+        workflow_storage=settings.workflow_storage,
+        workflow_issues=settings.workflow_issues,
+    )
 
 
 @router.get(

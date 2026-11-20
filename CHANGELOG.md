@@ -6,6 +6,19 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
+### Added
+- HW3: the service can use another team's Document Storage and issue tracker, chosen by
+  `BASKD_WORKFLOW_STORAGE` (`team3`, `team1`, `memory`, `failing`) and
+  `BASKD_WORKFLOW_ISSUES` (`team4`, `memory`, `failing`). Startup fails when the chosen
+  implementation's `DROPBOX_*` or `TRELLO_*` variables are missing. `/health` reports both
+  choices. (#64, #65)
+- `POST /workflows/meeting-prep` (HW3 Milestone 1): creates a calendar event, saves its
+  agenda in the configured storage and opens a prep issue in the configured tracker. A
+  failed step returns the error envelope plus `failed_step` and `completed`; resending with
+  `event_id` resumes without duplicating anything. Failure log lines carry `failed_step`.
+  (#66)
+- CI job `Unit tests on Python 3.14`, which runs the unit tests on Python 3.14. (#60)
+
 ### Changed
 - `requires-python` is now `>=3.12` instead of `>=3.12,<3.13`, so the package installs on
   Python 3.13 and 3.14. Team 3 asked for this to run `baskd.contract.ContractCalendarService`
@@ -13,8 +26,12 @@ Release notes on GitHub are built from the matching section here.
   wheels for the newer versions; no locked dependency version changed. Development, the
   container image and `.python-version` stay on 3.12. (#60)
 
-### Added
-- CI job `Unit tests on Python 3.14`, which runs the unit tests on Python 3.14. (#60)
+### Dependencies
+- Added the storage contract `cloud-storage-api` (tag `0.3.1`), Team 3's
+  `dropbox-client-impl` and `cloud-storage-client-api` (tag `v0.4.0`), Team 1's
+  `team1-dropbox-storage` (commit `784be97`; no tag yet), and Team 4's
+  `issue-tracker-contract` and `team-4-issue-tracker-trello`. These bring in the Dropbox SDK
+  (`dropbox==12.1.0`). (#64)
 
 ## [0.2.0] - 2026-11-11
 
