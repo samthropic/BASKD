@@ -152,13 +152,17 @@ cheap read) and answers 503 with the error code when it raises.
 | `baskd/contract.py` | `ContractCalendarService`: any `CalendarProvider` behind the shared `calendar_contract.CalendarService` interface. Maps our errors to the five shared codes by class. Reports input our rules reject as `invalid_input`, and provider events the shared model rejects as `provider_error` | ports, models, errors, calendar-contract |
 | `baskd/api/dependencies.py` | `get_provider` / `Provider` alias: the DI seam | ports |
 | `baskd/api/errors.py` | Error envelope models and exception handlers; `STATUS_BY_ERROR` is the one table mapping domain errors to HTTP | errors |
-| `baskd/api/events.py`, `baskd/api/health.py` | Routers | models, dependencies |
-| `baskd/app.py` | `create_app(settings=None, provider=None)`: wiring, lifespan log line | everything above |
+| `baskd/workflow/meeting_prep.py` | HW3: `MeetingPrep`, the three fixed steps (`create_event`, `save_agenda`, `create_issue`) over the three shared contracts; translates every vertical's errors into `baskd/errors.py` and raises `WorkflowStepFailed` (step + completed records) | errors, calendar-contract, cloud-storage-api, issue-tracker-contract |
+| `baskd/workflow/composition.py` | HW3: `build_storage` / `build_issues` from `Settings`. **The only module that imports another team's package** (Team 1, 3 and 4 implementations) | settings, controlled, other teams' packages |
+| `baskd/workflow/controlled.py` | HW3: in-memory and always-failing `DocumentStorage` / `IssueProvider` (the default, the tests, and the `failing` demo) | cloud-storage-api, issue-tracker-contract |
+| `baskd/api/events.py`, `baskd/api/health.py`, `baskd/api/workflows.py` | Routers | models, dependencies, workflow |
+| `baskd/app.py` | `create_app(settings=None, provider=None, storage=None, issues=None)`: wiring, lifespan log line | everything above |
 | `baskd/telemetry.py` | Log format (text, or Cloud Logging JSON linked to traces) and the tracer, set up once per process; `release_of` | `settings` |
 | `baskd/__main__.py` | `python -m baskd` → uvicorn | app |
 
 Rule of thumb: arrows point inward (api → ports/models/errors ← providers). If you find
-yourself importing `googleapiclient` outside `providers/google.py`, stop.
+yourself importing `googleapiclient` outside `providers/google.py`, or another team's package
+outside `workflow/composition.py`, stop.
 
 ## 3. The provider interface, and how it shaped the implementations
 

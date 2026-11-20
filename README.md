@@ -86,6 +86,7 @@ calendar, chosen by configuration; clients never name a calendar.
 | `GET /events?from=&to=&limit=&cursor=` | List events overlapping a window, oldest first, paginated | `200 {"items":[…],"next_cursor":"…"\|null}` | `422` bad query, `400` bad cursor, `403`, `502`, `503` |
 | `PUT /events/{id}` | Replace every client-editable field | `200` event | `404`, `422`, `400`, `403`, `502`, `503` |
 | `DELETE /events/{id}` | Delete | `204` | `404` (also when already deleted), `403`, `502`, `503` |
+| `POST /workflows/meeting-prep` | HW3: create the event, save its agenda in the configured storage, open a prep issue in the configured tracker ([below](#the-hw3-workflow-meeting-prep)) | `201 {"event":…,"document":…,"issue":…,"steps":[…]}` | `422` invalid body, `400`, `403`, `404` (unknown `event_id`), `502`, `503`; failures add `failed_step` and `completed` |
 
 An event looks like:
 
@@ -142,6 +143,61 @@ Rules every client can rely on (each is enforced by a test):
   so an invalid body is `422` even for an unknown id.
 - Every error has one shape, listed under [Errors](#errors) below.
 - URL gotcha: a `+` in a query-string timestamp must be percent-encoded (`%2B`), or use `Z`.
+
+### The HW3 workflow: meeting prep
+
+`POST /workflows/meeting-prep` runs three fixed steps, each through a shared contract. The
+implementations behind storage and the issue tracker are chosen by configuration (see
+[Configuration](#configuration)); `DESIGN.md` has the reasoning.
+
+| Step | Contract call | Reused when |
+| --- | --- | --- |
+| `create_event` | our calendar, `CalendarService.create` (or `get` with `event_id`) | `event_id` is given |
+| `save_agenda` | `DocumentStorage.create("/baskd/meeting-prep/<event id>.md")` | the file exists (`ConflictError`): the first saved agenda wins |
+| `create_issue` | `IssueProvider.create_issue("Prep: <title> [evt:<event id>]")` | an issue among the newest 100 carries the `[evt:<event id>]` tag |
+
+```bash
+curl -X POST localhost:8000/workflows/meeting-prep -H 'Content-Type: application/json' \
+  -d '{"title": "Design review: HW3", "start": "2026-11-24T15:00:00Z",
+       "end": "2026-11-24T15:30:00Z", "agenda": "1. Walk through DESIGN.md"}'
+```
+
+**On the deployed service.** It runs at `https://baskd-2h3zmmmvma-ue.a.run.app` and is private
+to NYU: any NYU Google account can call it with an identity token (`docs/DEPLOYMENT.md` §4).
+
+```bash
+gcloud auth login                                  # sign in with your NYU account
+URL=https://baskd-2h3zmmmvma-ue.a.run.app
+TOKEN=$(gcloud auth print-identity-token)
+curl -s -H "Authorization: Bearer $TOKEN" "$URL/health"   # shows the live storage and tracker
+curl -s -X POST "$URL/workflows/meeting-prep" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Try it", "start": "2026-12-10T15:00:00Z", "end": "2026-12-10T15:30:00Z",
+       "agenda": "1. Check the three providers"}'
+```
+
+It writes to the team's test calendar, Dropbox and Trello. The verification runs, with the
+records each one left in the providers, are in
+[#68](https://github.com/samthropic/BASKD/issues/68).
+
+Nothing is rolled back and the service never retries on its own. A failure returns the usual
+error envelope plus the step that failed and what already exists:
+
+```json
+{"error": {"code": "provider_unavailable",
+           "message": "Storage is temporarily unavailable. Earlier steps already ran: …",
+           "retryable": false,
+           "failed_step": "save_agenda",
+           "completed": [{"step": "create_event", "id": "abc123", "reused": false}]}}
+```
+
+To finish, send the same body again with `"event_id": "abc123"`: the event is read instead
+of created, and each finished step is found (`reused: true`) instead of repeated. Once
+`completed` is non-empty, `retryable` is `false` and there is no `Retry-After`, even for a
+transient failure: resending the original body unchanged would create a second event.
+`provider_error` at `create_issue` means the issue may have been created; the resumed run
+finds it by its tag before creating one. Error messages are BASK'D's own and fixed per
+outcome; the other teams' messages are not passed through.
 
 ### Errors
 

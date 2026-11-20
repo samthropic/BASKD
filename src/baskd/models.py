@@ -169,3 +169,45 @@ class EventPage(BaseModel):
 
     items: list[Event]
     next_cursor: str | None = None
+
+
+#: HW3 meeting prep: the title becomes part of an issue title, which Team 4's contract caps
+#: at 256 characters together with the ``[evt:<id>]`` tag; 200 leaves room for it.
+MEETING_TITLE_MAX_LENGTH = 200
+AGENDA_MAX_LENGTH = 10_000
+
+
+class MeetingPrepInput(BaseModel):
+    """Body of ``POST /workflows/meeting-prep``.
+
+    ``event_id`` resumes an earlier run: the workflow reads that event instead of creating
+    one, and the steps already done are found and reused rather than repeated.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(
+        min_length=1, max_length=MEETING_TITLE_MAX_LENGTH, examples=["Design review: HW3"]
+    )
+    start: AwareDatetime = Field(examples=["2026-11-24T15:00:00Z"])
+    end: AwareDatetime = Field(examples=["2026-11-24T15:30:00Z"])
+    agenda: str = Field(
+        default="", max_length=AGENDA_MAX_LENGTH, examples=["1. Walk through DESIGN.md"]
+    )
+    event_id: str | None = Field(default=None, min_length=1, max_length=1024)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _iso_8601_only(cls, value: object) -> object:
+        return _require_iso_timestamp(value)
+
+    @field_validator("start", "end")
+    @classmethod
+    def _whole_seconds_only(cls, value: datetime) -> datetime:
+        return value.replace(microsecond=0)
+
+    @model_validator(mode="after")
+    def _end_must_follow_start(self) -> MeetingPrepInput:
+        if self.end <= self.start:
+            raise ValueError("end must be after start")
+        return self
