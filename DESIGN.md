@@ -785,9 +785,9 @@ There is still one event and one file.
   - **An uncertain create is still reported** as `provider_error`, `retryable: false`. The
     caller should check the tracker or resume with `event_id`, and the tag search then finds
     the issue if it was created.
-- **Revisit** when the issue-tracker contract gains an idempotent create (we raise this with
-  Team 4 through [#70](https://github.com/samthropic/BASKD/issues/70)), or when the list
-  regularly holds more than 100 open issues.
+- **Revisit** when the issue-tracker contract gains an idempotent create (a gap in the shared
+  contract, not a defect in Team 4's package; see [H8](#h8-open-questions), question 3), or
+  when the list regularly holds more than 100 open issues.
 
 ## H5. Boundaries and the error model
 
@@ -803,7 +803,8 @@ There is still one event and one file.
 | --- | --- | --- |
 | Google service-account key | A file mounted from Secret Manager (`BASKD_GOOGLE_CREDENTIALS_FILE`) | Terraform (HW2) |
 | Dropbox app key, secret and refresh token for the test account | `DROPBOX_*` environment variables | Secret Manager, wired by Terraform ([#67](https://github.com/samthropic/BASKD/issues/67)) |
-| Trello API key, token and list id for the test board | `TRELLO_*` environment variables | Secret Manager, wired by Terraform (#67) |
+| Trello API key and token for the test board | `TRELLO_API_KEY`, `TRELLO_TOKEN` | Secret Manager, wired by Terraform (#67) |
+| Trello list the cards go on (not secret) | `TRELLO_LIST_ID` | Terraform variable `trello_list_id` (#67) |
 
 For local development, the same variables come from the developer's own environment.
 
@@ -848,7 +849,7 @@ Clients that ignore unknown fields are unaffected. The CHANGELOG announces both 
 | --- | --- | --- | --- | --- | --- |
 | **Event created, agenda not saved** (the handout's case) | Dropbox times out or is down | An event, no file (or a file whose response was lost) | `503 provider_unavailable`, `failed_step: save_agenda`, `completed: [create_event]` | Resend with `event_id`: no new event; a saved file is `ConflictError`, then `get_metadata`, `reused` | Failing storage, then in-memory storage holding the file; assert one event and one file |
 | **Issue create uncertain** | Trello times out after the request was sent | Event, file, maybe an issue | `502 provider_error`, `retryable: false`, `completed` lists two steps | Check the board, or resend with `event_id`: the tag search reuses the issue if it exists | A failing issue provider with `may_have_applied=True`, then a retry that finds the tagged issue |
-| **Tracker unreachable** | DNS failure or refused connection (`may_have_applied=False`) | Event and file | `503 provider_unavailable`, `failed_step: create_issue` | Resend with `event_id` | The `failing` issue implementation (the staging demo) |
+| **Tracker unreachable** | DNS failure or refused connection (`may_have_applied=False`) | Event and file | `503 provider_unavailable`, `failed_step: create_issue` | Resend with `event_id` | The `failing` issue implementation (the failure run in #68) |
 | **Credentials revoked or wrong** | A rotated Dropbox or Trello token, or the calendar no longer shared | The earlier steps' records | `403 access_denied` with the step | An operator updates the secret; the caller resumes | Failing implementations raising the denial errors |
 | **Configuration missing** | `DROPBOX_*` or `TRELLO_*` not set for the chosen implementation | No new revision serves traffic | Nothing: the service refuses to start, and the deploy's smoke check keeps the previous revision | Fix the Terraform or secret and deploy again | `Settings` tests for each combination |
 | **Unknown `event_id` on resume** | Mistyped id, or the event was deleted | Nothing new | `404 not_found`, `failed_step: create_event`, `completed: []` | Fix the id, or start without one | Resume test with a missing id |
@@ -858,9 +859,10 @@ Clients that ignore unknown fields are unaffected. The CHANGELOG announces both 
 
 ## H7. How we verify it
 
-Evidence goes in `docs/HW3_M1_EVIDENCE.md`
-([#68](https://github.com/samthropic/BASKD/issues/68)). Each check says whether it used
-controlled implementations or real providers.
+Evidence goes in [#68](https://github.com/samthropic/BASKD/issues/68), written by
+`scripts/hw3_evidence.py` (procedure in `infra/README.md`, "Switching the HW3
+implementations"). Each check says whether it used controlled implementations or real
+providers.
 
 **Controlled checks** (no real provider involved):
 
@@ -868,26 +870,34 @@ controlled implementations or real providers.
 | --- | --- | --- |
 | Happy path, each step's failure, resume, reuse of the agenda and the issue, uncertain create | Unit tests with `memory` and `failing` implementations, through the `client` fixture | The documented status, `code`, `failed_step` and `completed`; exactly one record per step after a resume |
 | Configuration | `Settings` and `composition` tests for every name and missing variable | The right contract type is built, or startup fails with a clear message |
-| Failure demo on the deployed service | `BASKD_WORKFLOW_ISSUES=failing` on staging | The caller sees `503 provider_unavailable` with `failed_step: create_issue` and both earlier steps in `completed` |
 
-**Real-provider checks** (the deployed service with the test accounts):
+**Checks on the deployed service** (three runs, one configuration change apart; the script
+confirms each record in Google Calendar, Dropbox and Trello themselves):
 
 | Check | How | Success means |
 | --- | --- | --- |
 | The composed workflow | `POST /workflows/meeting-prep` on the deployed service with `team3` and `team4` | The event on the test calendar, the file in the test Dropbox and the card on the test Trello list, with matching ids |
-| Swapping one vertical | Change only `BASKD_WORKFLOW_STORAGE` to `team1` through Terraform, roll out, run again | `/health` shows `team1`; a new file appears; the commit is the same as in the first run |
-| Partial failure and resume | Make `save_agenda` fail, then resume with `event_id` | Exactly one event on the calendar after the resume |
+| Swapping one vertical | Change only `workflow_storage` to `team1` through Terraform, roll out, run again | `/health` shows `team1` and the same version; a new file appears in Dropbox |
+| Partial failure | Set `workflow_issues` to `failing` (a controlled implementation; calendar and Dropbox stay real), run again | `503 provider_unavailable` with `failed_step: create_issue`; the event and file listed in `completed` exist in the providers, and no card was made |
+
+Resuming after a failure is checked with controlled implementations only (the unit tests
+above), not on the deployed service.
 
 Test records are deleted after grading.
 
 ## H8. Open questions
 
-1. **How do course staff call a private Cloud Run service?** Either we add their accounts as
-   invokers (they call with an identity token), or we add a simple API key now. Decided in
-   #67.
+1. **How do course staff call a private Cloud Run service?** **Answered (#67):** any NYU
+   Google account may invoke it (`invokers = ["domain:nyu.edu"]`); callers send
+   `gcloud auth print-identity-token`. No list of staff emails to collect, and no API key to
+   build and hand out before Milestone 2 brings real sign-in. Terraform refuses `allUsers`,
+   because the workflow writes to our test accounts (`docs/DEPLOYMENT.md` §4).
 2. **Team 1's package has no tag.** We pin a commit and switch to a tag when they publish one.
-3. **Contract mismatches we find,** such as the missing idempotent create or different errors
-   for the same Dropbox failure, are reported to the owning teams through #70.
+3. **Contract mismatches.** None confirmed so far. The missing idempotent create is a gap in
+   the shared issue-tracker contract, not a defect in Team 4's package, so we handle it
+   ourselves (H4). Whether Team 1 and Team 3 raise different errors for the same Dropbox
+   failure shows up in the swap run. A confirmed mismatch gets an issue with a reproduction
+   in the owning team's repository (#70).
 4. **Python 3.14** support waits on PR #61. Team 3 depends on it for their own swap demo.
 5. **Should the agenda file also record the issue id?** That would need a fourth step
    (`DocumentStorage.replace`). Not in Milestone 1.
@@ -895,6 +905,11 @@ Test records are deleted after grading.
    agenda wins.
 
 ## H9. Review record
+
+Team 3 (Zesan Rahman), whose Dropbox package we depend on, agreed on Nov 20 to review this
+part on [PR #73](https://github.com/samthropic/BASKD/pull/73). Within the team, the reviewer
+who approves that PR reviews it too. Substantive comments and our responses are recorded
+here; until then, the PR thread is the record.
 
 | Reviewer | Question | Response | Change |
 | --- | --- | --- | --- |
@@ -909,3 +924,6 @@ Test records are deleted after grading.
   actions' outcomes (§11) and what changed during implementation (§12) (Karthik).
 - 2026-11-20: HW3 Milestone 1 part added, for review before the code lands (Arda).
   Issue #63.
+- 2026-11-20: staff access decided (H8 question 1); verification reduced to three runs on the
+  deployed service (H7); no contract mismatch confirmed yet (H8 question 3) (Arda). Issues
+  #67, #68, #70.
