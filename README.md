@@ -46,7 +46,8 @@ Earlier releases: `v0.1.0-alpha.1` (Milestone 1, Oct 7) and `v0.1.0-rc.1` (revie
 
 ## Quick start
 
-Requirements: **Python 3.12** (pinned in `.python-version`) and [`uv`](https://docs.astral.sh/uv/)
+Requirements: **Python 3.12 or newer** (development uses the 3.12 pinned in `.python-version`;
+CI also runs the tests on 3.14) and [`uv`](https://docs.astral.sh/uv/)
 (`brew install uv`, `pipx install uv`, or `curl -LsSf https://astral.sh/uv/install.sh | sh`).
 `uv` downloads the right Python if you do not have it.
 

@@ -72,6 +72,7 @@ All of these run in `.github/workflows/ci.yml` and are branch-protection require
 - `ruff check .` and `ruff format --check .` (lint and formatting)
 - `mypy` in strict mode
 - `pytest` with coverage; new code is expected to keep the package at ≥ 90 % line coverage
+- `pytest` again on Python 3.14 (the package supports 3.12 and newer)
 - Docker image builds and answers `/health`
 - Integration tests against the real Google Calendar run when secrets are present (pushes to
   `main`, same-repo PRs, manual dispatch). A release additionally requires a **green
@@ -184,7 +185,8 @@ Google SDK in `tests/unit/test_google_provider.py`.
   their failures into `baskd/errors.py` exceptions, never `HTTPException`.
 - Times: inputs tz-aware, outputs UTC. Never log event content, calendar ids or credentials.
 - Tooling: `uv` for everything (`uv sync --locked`, `uv run ...`, `uv add <pkg>` then commit
-  the updated `uv.lock`). Python 3.12 only (`.python-version`). Tests use `pytest`; the
+  the updated `uv.lock`). Develop on Python 3.12 (`.python-version`); the package declares
+  `requires-python = ">=3.12"` and CI also runs the tests on 3.14. Tests use `pytest`; the
   `integration` marker means "talks to the real provider" and must self-skip without
   credentials and clean up after itself (unique titles, delete in a fixture).
 - Style is enforced by `ruff` (line length 100) and `mypy --strict`; run `make fmt` before

@@ -2,6 +2,7 @@
 #
 # Jobs:
 #   checks       lint, formatting, static types, unit tests with coverage (every push / PR)
+#   python-3-14  the unit tests again on Python 3.14, the newest version the package supports
 #   integration  the real Google Calendar round trip; needs repository secrets and therefore
 #                runs only for pushes to main, same-repo PRs, or manual dispatch
 #   docker       proves the container image builds and serves /health
@@ -58,6 +59,29 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
+
+  python-3-14:
+    # A separate job rather than a matrix on `checks`, so the required status check name
+    # "Lint, types, unit tests" stays the same. Development and the container image use the
+    # 3.12 in .python-version; consumers of the package (Team 3) run it on 3.14.
+    name: Unit tests on Python 3.14
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - name: Install Python 3.14 (UV_PYTHON overrides .python-version)
+        run: uv python install
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Unit tests
+        run: uv run pytest
 
   integration:
     name: Integration (real Google Calendar)

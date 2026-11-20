@@ -6,7 +6,15 @@ Release notes on GitHub are built from the matching section here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- CI job `Unit tests on Python 3.14`, which runs the unit tests on Python 3.14. (#60)
+
+### Changed
+- `requires-python` is now `>=3.12` instead of `>=3.12,<3.13`, so the package installs on
+  Python 3.13 and 3.14. Team 3 asked for this to run `baskd.contract.ContractCalendarService`
+  in their Python 3.14 service for the HW3 implementation-swap demo. `uv.lock` now carries
+  wheels for the newer versions; no locked dependency version changed. Development, the
+  container image and `.python-version` stay on 3.12. (#60)
 
 ## [0.3.0] - 2026-11-20
 
