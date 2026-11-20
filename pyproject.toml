@@ -16,6 +16,14 @@ dependencies = [
     "httplib2>=0.22",
     "tzdata>=2025.2",
     "calendar-contract",
+    # HW3: the other two verticals' shared contracts and the other teams' implementations.
+    # Only src/baskd/workflow/composition.py imports the implementations.
+    "cloud-storage-api",
+    "cloud-storage-client-api",
+    "dropbox-client-impl",
+    "team1-dropbox-storage",
+    "issue-tracker-contract",
+    "team-4-issue-tracker-trello",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-gcp-trace>=1.7",
@@ -40,9 +48,24 @@ packages = ["src/baskd"]
 [tool.uv]
 # The lockfile (uv.lock) pins every dependency exactly; `uv sync --locked` reproduces it.
 package = true
+# The storage contract, tag 0.3.1. Team 1's package names it with ".git" in the URL and Team 3's
+# without, which uv treats as two different packages; one override makes every reference agree.
+# (The package reports version 0.2.0 at this tag, so pin it by tag, never by version.)
+override-dependencies = [
+    "cloud-storage-api @ git+https://github.com/Dayana20/ospsd26-cloud-storage.git@0.3.1#subdirectory=src/cloud_storage_api",
+]
 
 [tool.uv.sources]
 calendar-contract = { git = "https://github.com/Airbus-A330/OSPSD-Calendar", tag = "v0.1.0-rc.1" }
+# Team 3's Dropbox storage and the client contract it is built on.
+cloud-storage-client-api = { git = "https://github.com/Shreyas191/OSPSD-Team-3", tag = "v0.4.0", subdirectory = "src/cloud_storage_client_api" }
+dropbox-client-impl = { git = "https://github.com/Shreyas191/OSPSD-Team-3", tag = "v0.4.0", subdirectory = "src/dropbox_client_impl" }
+# Team 1's Dropbox storage. No tag yet (issue 50 in Dayana20/sandbox); move to one when published.
+team1-dropbox-storage = { git = "https://github.com/Dayana20/sandbox", rev = "784be97fc111338c6746b9d7288bf84a333a9b16", subdirectory = "packages/team1_dropbox" }
+# Issue tracker contract and Team 4's Trello implementation. `rev`, not `tag`: Team 4's package
+# names the contract with a direct reference, and only `rev` resolves to the same URL.
+issue-tracker-contract = { git = "https://github.com/Tyler-Arciniaga/OSPSD-Team-4.git", rev = "issue-tracker-contract-v1.1.0", subdirectory = "contract" }
+team-4-issue-tracker-trello = { git = "https://github.com/Tyler-Arciniaga/OSPSD-Team-4.git", rev = "team-4-issue-tracker-trello-v1.0.0", subdirectory = "team-4-trello-impl" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
