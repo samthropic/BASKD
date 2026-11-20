@@ -94,8 +94,10 @@ behind (the next apply replaces it).
 ### Step 2b (HW3): the Dropbox and Trello credentials
 
 Only needed before you set `workflow_storage` to `team3` / `team1` or `workflow_issues` to
-`team4`; the defaults (`memory`) read no secrets. Get the values first
-(`docs/HUMAN_STEPS.md` §8), export them in your shell, then add one version per secret.
+`team4`; the defaults (`memory`) read no secrets. Quickest: `python ../scripts/hw3_accounts.py
+prod` walks through `docs/HUMAN_STEPS.md` §8, checks each value with Dropbox or Trello, stores
+it, and prints the `trello_list_id` line. If you already have the values, export them in your
+shell and add one version per secret.
 The script reads the variables and pipes each one to `gcloud`, so no value lands in your
 shell history or on disk; unset variables are skipped:
 
@@ -209,15 +211,15 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "$URL/hea
 `failing` makes every call to that vertical fail with a provider error, so the workflow's
 partial-failure response can be shown on the deployed service. Set it back afterwards.
 
-**The Milestone 1 evidence (#68)** is three runs, one configuration change apart. With the
-Dropbox and Trello variables still exported from step 2b, `scripts/hw3_evidence.py` also
-confirms the file and the card in Dropbox and Trello themselves:
+**The Milestone 1 evidence (#68)** is three runs, one configuration change apart.
+`scripts/hw3_evidence.py` also confirms the file and the card in Dropbox and Trello
+themselves, with the credentials it reads from Secret Manager (`--secrets prod`):
 
 | Run | `workflow_storage` | `workflow_issues` | Command |
 | --- | --- | --- | --- |
-| Composed workflow | `team3` | `team4` | `python ../scripts/hw3_evidence.py "$URL" compose --out evidence.md` |
-| Swap one vertical | `team1` | `team4` | `python ../scripts/hw3_evidence.py "$URL" swap --out evidence.md` |
-| Controlled failure | `team1` | `failing` | `python ../scripts/hw3_evidence.py "$URL" failure --out evidence.md` |
+| Composed workflow | `team3` | `team4` | `python ../scripts/hw3_evidence.py "$URL" compose --secrets prod --out evidence.md` |
+| Swap one vertical | `team1` | `team4` | `python ../scripts/hw3_evidence.py "$URL" swap --secrets prod --out evidence.md` |
+| Controlled failure | `team1` | `failing` | `python ../scripts/hw3_evidence.py "$URL" failure --secrets prod --out evidence.md` |
 
 Export `BASKD_SMOKE_TOKEN=$(gcloud auth print-identity-token)` first. Each run exits non-zero
 if the service did not behave as documented. Paste `evidence.md` into #68, and keep the

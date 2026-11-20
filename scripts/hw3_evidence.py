@@ -12,10 +12,10 @@ and what each provider holds afterwards. Paste the sections into issue #68 (or p
 ``--out FILE`` to append them). The records are kept so graders can look them up.
 
 Provider checks: the calendar event through ``GET /events/{id}``, which reads Google; the
-Dropbox file and the Trello card through their own APIs, when ``DROPBOX_APP_KEY``,
-``DROPBOX_APP_SECRET``, ``DROPBOX_REFRESH_TOKEN``, ``TRELLO_API_KEY`` and ``TRELLO_TOKEN``
-are exported (the same values ``scripts/add_workflow_secrets.sh`` stores). Credentials go in
-headers or request bodies and are never printed.
+Dropbox file and the Trello card through their own APIs, with the credentials the service
+uses: ``--secrets prod`` reads them from Secret Manager (``gcloud``), or export
+``DROPBOX_APP_KEY``, ``DROPBOX_APP_SECRET``, ``DROPBOX_REFRESH_TOKEN``, ``TRELLO_API_KEY`` and
+``TRELLO_TOKEN``. Credentials go in headers or request bodies and are never printed.
 
 Exit code 0 only if the run behaved as documented for its label: ``compose`` and ``swap``
 need 201 and every record found; ``failure`` needs an error that names ``failed_step``.
@@ -28,6 +28,7 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -225,12 +226,53 @@ def run(base: str, token: str, label: str) -> Evidence:
     return evidence
 
 
+#: Environment variable -> Secret Manager suffix, as in infra/main.tf.
+SECRET_SUFFIXES = {
+    "DROPBOX_APP_KEY": "dropbox-app-key",
+    "DROPBOX_APP_SECRET": "dropbox-app-secret",
+    "DROPBOX_REFRESH_TOKEN": "dropbox-refresh-token",
+    "TRELLO_API_KEY": "trello-api-key",
+    "TRELLO_TOKEN": "trello-token",
+}
+
+
+def load_secrets(environment: str) -> None:
+    """Fill unset credential variables from the environment's Secret Manager secrets."""
+    prefix = "baskd" if environment == "prod" else "baskd-staging"
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "baskd-calendar")
+    for variable, suffix in SECRET_SUFFIXES.items():
+        if os.environ.get(variable):
+            continue
+        result = subprocess.run(
+            [
+                "gcloud",
+                "secrets",
+                "versions",
+                "access",
+                "latest",
+                f"--secret={prefix}-{suffix}",
+                f"--project={project}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout:
+            os.environ[variable] = result.stdout
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("url", help="service URL, e.g. $(terraform output -raw service_url)")
     parser.add_argument("label", choices=sorted(EXPECTED_CONFIG))
     parser.add_argument("--out", help="also append the Markdown section to this file")
+    parser.add_argument(
+        "--secrets",
+        choices=["prod", "staging"],
+        help="read the Dropbox and Trello credentials from this environment's Secret Manager",
+    )
     args = parser.parse_args()
+    if args.secrets:
+        load_secrets(args.secrets)
     token = os.environ.get("BASKD_SMOKE_TOKEN")
     if not token:
         print("Set BASKD_SMOKE_TOKEN=$(gcloud auth print-identity-token)", file=sys.stderr)

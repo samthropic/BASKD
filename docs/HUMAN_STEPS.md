@@ -141,6 +141,12 @@ with **one test account each**. Use throwaway accounts made for the course, neve
 personal Dropbox or Trello: whoever creates them can revoke them, and the deployed service can
 write to them. About 30 minutes.
 
+**Quickest route:** after `terraform apply` has created the secrets, run
+`python scripts/hw3_accounts.py prod`. It opens each page below in turn, asks for every value
+with hidden input, gets the Dropbox refresh token with Dropbox's own code flow (no redirect URI
+or storage package needed), checks the values with Dropbox and Trello, stores them in Secret
+Manager and prints `trello_list_id`. The manual steps follow.
+
 **Dropbox (both storage packages use the same three values):**
 
 1. Sign in to the test Dropbox account and open the [App Console](https://www.dropbox.com/developers/apps).
